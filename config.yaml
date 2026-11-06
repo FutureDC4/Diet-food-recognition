@@ -112,28 +112,38 @@ weight_estimation:
     pasta: 600
     egg: 120
     cheese: 300
-  # 不同食物的默认堆叠高度（cm），未列出的用 default_height_cm
+  # 不同食物的默认堆叠高度（cm），未列出的用 default_height_cm。
+  # 按「形态」而不是按「菜名」给高度，这是估重误差最大的一处：
+  #   薄摊型 1.0-1.5  煎蛋、薯饼、煎饺、炸鸡排——平铺在盘上，几乎不堆
+  #   切片堆叠 1.5-2.0 腊肠、卤味——切片叠放，中间有缝
+  #   炒菜    2.0-2.2  炒白菜、豆芽、空心菜——体积大、密度低
+  #   炖菜/米饭 3.0-4.0 咖喱、红烧、米饭——真正有厚度
+  # 统一按 3 cm 会把煎蛋算出 2-4 倍的重量（一片煎蛋实际只有 1 cm 厚）。
   height_by_food:
-    # 中餐食堂 12 类：一格菜的堆叠厚度
-    carrot_eggs: 2.2
-    chicken_nuggets: 2.5
-    chinese_cabbage: 2.5
-    chinese_sausage: 1.5
-    curry: 3.0
-    fried_chicken: 2.5
-    fried_dumplings: 2.5
-    fried_eggs: 2.0
-    mung_bean_sprouts: 2.5
+    # 薄摊型
+    fried_eggs: 1.2       # 煎蛋约 1 cm，炒蛋堆起来约 1.5，取中间
+    triangle_hash_brown: 1.2
+    fried_chicken: 1.5
+    hot_dog: 1.6
+    # 切片堆叠
+    chinese_sausage: 1.7
+    # 炒菜
+    carrot_eggs: 2.0
+    chicken_nuggets: 2.2
+    chinese_cabbage: 2.2
+    mung_bean_sprouts: 2.2
+    water_spinach: 2.2
+    loofah: 2.2
+    fried_string_beans: 2.2
+    fried_dumplings: 2.0
+    # 炖菜 / 主食
+    curry: 3.2
     rice: 3.5
-    triangle_hash_brown: 1.5
-    water_spinach: 2.5
-    # 中餐扩充 8 类
-    braised_meat: 2.2
+    fried_noodles: 3.0
+    # 中餐扩充 8 类（其余已在上面按形态归类）
+    braised_meat: 3.0
     braised_egg: 3.0
     fried_chicken_legs: 3.0
-    fried_noodles: 3.0
-    fried_string_beans: 2.5
-    loofah: 2.5
     pumpkin: 2.5
     sweet_potato: 4.0
     # COCO / 旧模型
@@ -183,7 +193,24 @@ nutrition_calibration:
     烤:      { added: 0.30, residue: 0.10 }
     生:      { added: 0.00, residue: 0.00 }
     无:      { added: 0.00, residue: 0.00 }
-  sodium_retention: 0.78    # 盐/酱油随汤汁留在盘底的比例（1.0 = 不折算）
+  # 盐的折算：按烹调方式区分，因为盐在食材里还是汤汁里，结果差别很大。
+  #   腌制/蒸煮 → 盐在肉里，几乎不损失（腊肠的咸是腌进去的，不会因为不吃汤就变淡）
+  #   清炒/炖   → 盐在汤汁里，随盘底汤水留下 20%-25%
+  sodium_retention:
+    default: 0.85
+    蒸: 0.98
+    煮: 0.97
+    无: 1.00
+    生: 1.00
+    清炒: 0.78
+    炒: 0.78
+    干煸: 0.80
+    炖: 0.85
+    烧: 0.85
+    煎: 0.90
+    油炸: 0.90
+    凉拌: 0.85
+    烤: 0.90
 
 # ---------------- 米饭三级处理 ----------------
 # 米饭在中餐里最容易被菜压住，检测框会明显偏小。按

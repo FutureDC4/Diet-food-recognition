@@ -71,7 +71,13 @@ DEFAULT_CFG: Dict[str, Any] = {
         "生": {"added": 0.00, "residue": 0.00},
         "无": {"added": 0.00, "residue": 0.00},
     },
-    "sodium_retention": 0.78,
+    "sodium_retention": {
+        "default": 0.85,
+        "蒸": 0.98, "煮": 0.97, "无": 1.00, "生": 1.00,
+        "清炒": 0.78, "炒": 0.78, "干煸": 0.80,
+        "炖": 0.85, "烧": 0.85, "煎": 0.90, "油炸": 0.90,
+        "凉拌": 0.85, "烤": 0.90,
+    },
 }
 
 _MACRO_SCALE_FIELDS = ("protein_g", "carb_g", "fiber_g")
@@ -86,7 +92,7 @@ def load_calibration() -> Dict[str, Any]:
         "enabled": bool(cfg.get("enabled", DEFAULT_CFG["enabled"])),
         "edible_ratio": {**DEFAULT_CFG["edible_ratio"], **(cfg.get("edible_ratio") or {})},
         "oil": {**DEFAULT_CFG["oil"], **(cfg.get("oil") or {})},
-        "sodium_retention": float(cfg.get("sodium_retention", DEFAULT_CFG["sodium_retention"])),
+        "sodium_retention": _merge_sodium(cfg.get("sodium_retention")),
     }
     return merged
 
@@ -95,6 +101,16 @@ def _lookup(table: Dict[str, Any], key: str) -> Dict[str, Any]:
     if key in table and isinstance(table[key], dict):
         return table[key]
     return table.get("default") or {}
+
+
+def _merge_sodium(value: Any) -> Dict[str, float]:
+    """钠系数允许两种写法：单个数字（全局）或按烹调方式的字典。"""
+    default = dict(DEFAULT_CFG["sodium_retention"])
+    if isinstance(value, dict):
+        return {**default, **{str(k): float(v) for k, v in value.items()}}
+    if isinstance(value, (int, float)):
+        return {k: float(value) for k in default}
+    return default
 
 
 def calibrate_dish(dish: Dict[str, Any], cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -109,10 +125,15 @@ def calibrate_dish(dish: Dict[str, Any], cfg: Optional[Dict[str, Any]] = None) -
 
     edible = float((cfg["edible_ratio"]).get(str(dish.get("category") or ""),
                                             cfg["edible_ratio"]["default"]))
-    oil = _lookup(cfg["oil"], str(dish.get("cooking") or ""))
+    cooking = str(dish.get("cooking") or "")
+    oil = _lookup(cfg["oil"], cooking)
     added = float(oil.get("added", 0.0) or 0.0)
     residue = float(oil.get("residue", 0.0) or 0.0)
-    na_keep = float(cfg.get("sodium_retention", 0.8))
+    # 盐的保留按烹调方式取：腌/蒸的盐在食材里，清炒的盐在汤汁里
+    na_table = cfg.get("sodium_retention") or DEFAULT_CFG["sodium_retention"]
+    if not isinstance(na_table, dict):
+        na_table = {k: float(na_table) for k in DEFAULT_CFG["sodium_retention"]}
+    na_keep = float(na_table.get(cooking, na_table.get("default", 0.85)))
 
     fat0 = float(dish.get("fat_g", 0) or 0)
     kcal0 = float(dish.get("calories", 0) or 0)
@@ -175,7 +196,7 @@ def calibrate(dishes: Sequence[Dict[str, Any]],
         "sodium_after": round(new_na, 0),
         "fat_before": round(gross_fat, 1),
         "fat_after": round(new_fat, 1),
-        "sodium_retention": cfg.get("sodium_retention", 0.78),
+        "sodium_kept_ratio": round(new_na / gross_na, 3) if gross_na else 0.0,
     }
 
 

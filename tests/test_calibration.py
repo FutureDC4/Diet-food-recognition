@@ -63,13 +63,21 @@ def test_stirfry_trims_more_than_steam():
     print(f"[OK] 清炒保留 {r_stir:.0%} 脂肪 < 蒸制保留 {r_steam:.0%}")
 
 
-def test_sodium_trimmed_about_22pct():
-    """钠按 sodium_retention 折算，误差应小于 2 个百分点。"""
+def test_sodium_kept_inside_food():
+    """蒸制/腌制：盐在食材里，几乎不该扣（腊肠咸是腌进去的）。"""
     out = calibrate_dish(SAUSAGE, CFG)
     keep = out["sodium_mg"] / SAUSAGE["sodium_mg"]
-    want = CFG["sodium_retention"] * CFG["edible_ratio"][SAUSAGE["category"]]
-    assert abs(keep - want) < 0.02, (keep, want)
-    print(f"[OK] 钠保留 {keep:.0%}（期望 {want:.0%}）")
+    assert keep >= 0.90, keep
+    print(f"[OK] 蒸腊肠的钠保留 {keep:.0%}")
+
+
+def test_sodium_trimmed_in_stirfry():
+    """清炒：盐在汤汁里，会随盘底汤水留下 20% 以上。"""
+    out = calibrate_dish(CABBAGE, CFG)
+    keep = out["sodium_mg"] / CABBAGE["sodium_mg"]
+    want = CFG["sodium_retention"]["清炒"] * CFG["edible_ratio"][CABBAGE["category"]]
+    assert keep < 0.75 and abs(keep - want) < 0.02, (keep, want)
+    print(f"[OK] 清炒白菜的钠保留 {keep:.0%}（期望 {want:.0%}）")
 
 
 def test_energy_consistent_with_fat_change():
@@ -95,7 +103,8 @@ def test_gross_values_kept():
 def main() -> int:
     tests = [
         test_disabled_returns_original, test_monotonic_decrease, test_steam_barely_trims_oil,
-        test_stirfry_trims_more_than_steam, test_sodium_trimmed_about_22pct,
+        test_stirfry_trims_more_than_steam, test_sodium_kept_inside_food,
+        test_sodium_trimmed_in_stirfry,
         test_energy_consistent_with_fat_change, test_gross_values_kept,
     ]
     failed = 0

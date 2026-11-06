@@ -295,16 +295,18 @@ def evaluate_structure(dishes: List[dict], totals: Dict[str, Any],
 
     # 7. 钠
     na_max = float(targets["sodium_mg"])
+    salt_g = sodium / 400.0          # 1 g 盐 ≈ 400 mg 钠
     if sodium > na_max * 1.25:
-        st, hint = STATUS_HIGH, f"钠 {sodium:.0f} mg 偏高（一餐上限约 {na_max:.0f} mg），下一餐吃清淡些"
+        st, hint = STATUS_HIGH, (f"钠 {sodium:.0f} mg ≈ {salt_g:.1f} g 盐，"
+                                 f"接近全天 <5 g 的上限，下一餐吃清淡些")
     elif sodium > na_max:
-        st, hint = STATUS_HIGH, f"钠略超 {na_max:.0f} mg，注意酱油与腌制食品"
+        st, hint = STATUS_HIGH, f"钠 {sodium:.0f} mg ≈ {salt_g:.1f} g 盐，注意酱油与腌制食品"
     else:
-        st, hint = STATUS_OK, "钠在合理范围"
+        st, hint = STATUS_OK, f"钠 {sodium:.0f} mg ≈ {salt_g:.1f} g 盐，在合理范围"
     checks.append({
         "key": "sodium", "label": "钠",
         "actual": round(sodium, 0), "actual_text": f"{sodium:.0f} mg",
-        "target_text": f"单餐建议 ≤{na_max:.0f} mg",
+        "target_text": f"单餐建议 ≤{na_max:.0f} mg（≈{na_max/400:.1f} g 盐）",
         "status": st, "hint": hint,
     })
 
