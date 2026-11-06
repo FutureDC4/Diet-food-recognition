@@ -79,14 +79,14 @@ weight_estimation:
     carrot_eggs: 300
     chicken_nuggets: 300
     chinese_cabbage: 300
-    chinese_sausage: 200
+    chinese_sausage: 90      # 一份 8-10 片，约 60-90g；原来 200 会算出两倍份量
     curry: 400
     fried_chicken: 350
     fried_dumplings: 350
-    fried_eggs: 200
+    fried_eggs: 160          # 一格炒蛋约 2-3 个蛋；原来 200 相当于 4 个蛋
     mung_bean_sprouts: 300
     rice: 400
-    triangle_hash_brown: 250
+    triangle_hash_brown: 150 # 两块三角薯饼约 70-90g
     water_spinach: 300
     # 中餐扩充 8 类（一格菜的分量上限）
     braised_meat: 250
@@ -146,6 +146,44 @@ weight_estimation:
     cheese: 2.0
     cake: 6.0
     default: 3.0
+
+# ---------------- 营养合理性校正 ----------------
+# 估重得到的是「装盘量」，营养表描述的是「食物本身」。两者差三次系统性偏高：
+#   ① 菜帮/皮/骨/盘底汤汁吃不到      → edible_ratio
+#   ② 营养表含全部烹调油，浮油会留盘底 → oil（added=外加油占比，residue=残留不入口比例）
+#   ③ 盐和酱油溶在汤汁里              → sodium_retention
+# 只在营养计算之后做一次折算，关掉即恢复原始值。
+nutrition_calibration:
+  enabled: true
+  # 可食部比例（吃进嘴的重量 / 装盘重量）
+  edible_ratio:
+    default: 0.95
+    蔬菜: 0.88      # 菜帮、汤水、盘底积油最多
+    荤菜: 0.94
+    加工肉: 0.97
+    油炸: 0.95
+    主食: 0.97
+    甜点: 0.97
+    水果: 0.92      # 果皮果核
+    奶类: 1.00
+    蛋类: 1.00
+  # 外加烹调油：added = 该菜脂肪里来自烹调油的比例；residue = 表面浮油不入口的比例
+  oil:
+    default: { added: 0.50, residue: 0.25 }
+    清炒:    { added: 0.70, residue: 0.32 }
+    炒:      { added: 0.70, residue: 0.32 }
+    干煸:    { added: 0.75, residue: 0.30 }
+    煎:      { added: 0.62, residue: 0.30 }
+    油炸:    { added: 0.55, residue: 0.25 }
+    烧:      { added: 0.55, residue: 0.28 }
+    炖:      { added: 0.45, residue: 0.22 }
+    蒸:      { added: 0.10, residue: 0.05 }
+    煮:      { added: 0.05, residue: 0.02 }
+    凉拌:    { added: 0.65, residue: 0.30 }
+    烤:      { added: 0.30, residue: 0.10 }
+    生:      { added: 0.00, residue: 0.00 }
+    无:      { added: 0.00, residue: 0.00 }
+  sodium_retention: 0.78    # 盐/酱油随汤汁留在盘底的比例（1.0 = 不折算）
 
 # ---------------- 米饭三级处理 ----------------
 # 米饭在中餐里最容易被菜压住，检测框会明显偏小。按

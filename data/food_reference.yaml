@@ -22,6 +22,7 @@
 #   protein_g / fat_g / carb_g / fiber_g   三大营养素 + 膳食纤维（g）
 #   sodium_mg          钠 mg（含烹调盐，是判断「咸不咸」的关键）
 #   category           膳食类别：主食 / 蔬菜 / 荤菜 / 油炸 / 加工肉 / 汤
+#   staple_share       这道菜里主食占的能量比例（土豆、薯饼这类隐性主食，0-1，缺省 0）
 #   cooking            烹调方式：蒸 / 煮 / 清炒 / 红烧 / 油炸 / 煎 / 干煸
 #   inflammation       促炎倾向：低 / 中 / 高（依据烹调方式与加工度，非临床指标）
 #   micro              微量元素（每 100 g）
@@ -270,6 +271,7 @@ triangle_hash_brown:
   fiber_g: 2.4
   sodium_mg: 400
   category: 油炸
+  staple_share: 0.85          # 主体是土豆
   cooking: 油炸
   inflammation: 高
   micro: {calcium_mg: 12, iron_mg: 0.8, zinc_mg: 0.4, selenium_ug: 1.0, potassium_mg: 480,
@@ -288,6 +290,7 @@ curry:
   fiber_g: 1.4
   sodium_mg: 480
   category: 荤菜
+  staple_share: 0.30          # 咖喱里的土豆按主食计
   cooking: 炖
   inflammation: 低
   micro: {calcium_mg: 20, iron_mg: 1.0, zinc_mg: 0.9, selenium_ug: 5.0, potassium_mg: 250,

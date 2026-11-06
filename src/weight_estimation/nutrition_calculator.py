@@ -86,6 +86,8 @@ def load_food_reference(path: Optional[str | Path] = None) -> Dict[str, dict]:
                 "sodium_mg": _num(value.get("sodium_mg"), DEFAULT_ENTRY["sodium_mg"]),
                 "name_cn": value.get("name_cn"),
                 "category": value.get("category", "其他"),
+                # 这道菜里「主食」占多少能量（土豆、薯饼、粉丝这类隐性主食）
+                "staple_share": _num(value.get("staple_share"), 0.0),
                 "cooking": value.get("cooking", "未知"),
                 "inflammation": value.get("inflammation", "中"),
                 "risk": value.get("risk"),
@@ -174,6 +176,7 @@ class NutritionCalculator:
             "sodium_mg": round(float(entry.get("sodium_mg", 0)) * ratio, 1),
             "micro": micro,
             "category": entry.get("category", "其他"),
+            "staple_share": float(entry.get("staple_share", 0.0) or 0.0),
             "cooking": entry.get("cooking", "未知"),
             "inflammation": entry.get("inflammation", "中"),
             "risk": entry.get("risk"),

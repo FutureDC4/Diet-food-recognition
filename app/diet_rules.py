@@ -169,6 +169,9 @@ def evaluate_structure(dishes: List[dict], totals: Dict[str, Any],
             veg_g += w
         if cat in STAPLE_CATEGORIES:
             staple_kcal += c
+        else:
+            # 土豆、薯饼、粉丝这类「隐性主食」按比例计入，否则一盘咖喱+薯饼会显示主食 0%
+            staple_kcal += c * float(d.get("staple_share") or 0.0)
         if cat in PROTEIN_CATEGORIES:
             protein_kcal += c
         if d.get("risk") in ("油炸", "加工肉") or cat in ("油炸",):

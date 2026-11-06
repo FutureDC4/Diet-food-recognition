@@ -29,6 +29,7 @@ from src.utils.food_labels import zh_name  # noqa: E402
 from src.utils.image_utils import load_image  # noqa: E402
 from src.weight_estimation import NutritionCalculator, PortionEstimator  # noqa: E402
 
+from .calibration import calibrate  # noqa: E402
 from .detection_rules import (  # noqa: E402
     DEFAULT_HEIGHT_LEVEL, HEIGHT_LEVELS, apply_rice_rule, height_multiplier,
 )
@@ -159,6 +160,10 @@ class MealAnalyzer:
         dishes = self._nutrition.calculate_many(weight_items)
         for d in dishes:
             d["name_cn"] = zh_name(d["name"])
+
+        # 装盘营养 → 入口营养：扣掉菜帮/盘底汤汁、表面浮油与随汁流失的盐。
+        # 只做一次折算，参数在 config.yaml → nutrition_calibration，可整体关闭。
+        dishes, calibration = calibrate(dishes)
         totals = self._nutrition.totals(dishes)
 
         # ---------- 6. 健康指标 ----------
@@ -201,6 +206,7 @@ class MealAnalyzer:
             "height_levels": dict(HEIGHT_LEVELS),
             "dishes": dishes,
             "totals": totals,
+            "calibration": calibration,
             "health": health,
             "meal_share": meal_share,
             "meal_type": meal_type,
