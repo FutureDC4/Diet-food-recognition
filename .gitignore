@@ -41,7 +41,8 @@ runs/
 _upstream/
 
 # ===== 用户隐私数据 =====
-data/users.json
+data/users.json*
+data/reports/
 
 # ===== 数据集（体积大，用 data.yaml 说明来源即可）=====
 数据/

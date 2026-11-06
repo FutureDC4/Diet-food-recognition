@@ -1,427 +1,524 @@
-# 膳食识别系统（中餐）
+# 膳食识别系统 · Diet Food Recognition
 
-> **中餐食物识别 + 重量估计 + 健康膳食建议**
-> 技术路线：**YOLOv11 检测（盘子 OBB + 18 类中餐食物 bbox）→ 盘子/餐具参考尺度 → 面积估重 → 密度/营养换算 → BMR/TDEE → Ollama 流式建议**
->
-> 思路源自 [DidntRead/food_calories](https://github.com/DidntRead/food_calories)，重构为可维护的工程，
-> 并在检测模型上做了 **CBAM 注意力 + WIoU 损失** 的改进与消融实验。
+<p align="center">
+  <b>拍一张餐盘照片，算出这一餐吃了什么、大约多少克、多少热量，还差什么。</b><br/>
+  中餐 18 类检测 · 面积估重 · 餐次配额 · 结构评估 · 本地大模型建议
+</p>
 
-## 项目亮点
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/YOLOv11s-18%20classes-00BFFF" />
+  <img src="https://img.shields.io/badge/mAP%400.5-76.13%25-2ea44f" />
+  <img src="https://img.shields.io/badge/PySide6-Desktop%20GUI-41CD52?logo=qt&logoColor=white" />
+  <img src="https://img.shields.io/badge/LLM-Ollama%20(local)-000000" />
+</p>
 
-| 项 | 内容 |
+<p align="center">
+  <img src="docs/screenshots/01_gui_result.png" width="880" alt="上位机识别结果界面" />
+</p>
+
+---
+
+## 目录
+
+- [这是什么](#这是什么)
+- [效果展示](#效果展示)
+- [快速开始](#快速开始)
+- [系统架构](#系统架构)
+- [核心算法](#核心算法)
+- [模型与改进实验](#模型与改进实验)
+- [配置说明](#配置说明)
+- [命令行用法](#命令行用法)
+- [目录结构](#目录结构)
+- [测试](#测试)
+- [已知限制](#已知限制)
+- [常见问题](#常见问题)
+
+---
+
+## 这是什么
+
+一个**纯本地运行**的中餐膳食分析系统：输入一张俯拍的餐盘照片，输出这一餐的菜品清单、估算重量、
+热量与营养素，并结合用户身体信息、餐次给出「这一餐怎么样、现在补什么、下一餐怎么安排」。
+
+技术路线源自 [DidntRead/food_calories](https://github.com/DidntRead/food_calories)（西餐 + 参照物尺度），
+本项目重构为可维护工程，并做了两件原项目没有的事：
+
+1. **自训练 18 类中餐检测模型**，并在检测端做了 CBAM 注意力 + WIoU 损失的改进与消融实验；
+2. **把「给建议」从大模型手里拿回来**——事实判断（偏低/偏高/该加多少）由规则层算死，
+   大模型只负责组织语言。这是 1.5B 小模型能稳定输出的关键。
+
+### 能做什么 / 不能做什么
+
+| ✅ 能做 | ❌ 做不到 |
 |---|---|
-| **自训练中餐模型** | YOLOv11s，18 类常见中式菜品，2495 张训练图 |
-| **改进方案消融** | 基线 / +CBAM+WIoU / +CBAM-neck+WIoU 三组对比，test mAP50 最高 **76.13%** |
-| **双入口** | PySide6 图形界面上位机 + 命令行，共用同一套检测/估重/建议流水线 |
-| **零代码换模型** | 换权重只需覆盖 `.pt` + 在营养表加类别 key，业务代码 0 改动 |
-| **工程完整性** | 6 组单元测试、SQLite 历史、CSV 导出、Ollama 降级兜底 |
+| 识别 18 类常见食堂/家常菜，输出置信度与估算重量 | 未收录的菜会漏检，或被判成外观相近的类别 |
+| 按盘子/餐具换算像素尺度，估算单份重量（误差 ±30%~50%） | 精确到克的营养记账（汤汁、堆叠类偏差更大） |
+| 按早/午/晚/加餐给本餐热量预算，评估 8 项结构指标 | 医学诊断、疾病饮食处方 |
+| 指出「缺蛋白/缺蔬菜/钠超标/促炎负荷高」并给可执行的加法 | 判断食材是否新鲜、是否含过敏原 |
+| 记录历史，按天汇总，导出 Markdown 报告 | 多日趋势建模与体重预测 |
+
+---
 
 ## 效果展示
 
-| 输入 | 识别结果 |
-|---|---|
-| ![中餐椭圆盘](test_samples/input/05_chinese_oval_plate.jpg) | ![识别结果](test_samples/results/02_chinese_oval_plate_result.jpg) |
+### 上位机：识别结果
 
-> 上图实测：`fried_chicken 0.91 / 201g`、`mung_bean_sprouts 0.92 / 88g`、
-> `fried_dumplings 0.80 / 190g`、`chinese_sausage 0.84 / 59g`、`rice 0.70 / 65g`
->
-> 更多样例见 **[test_samples/](test_samples/)**（含西式对照图与便当盒遮挡场景）。
+左栏选就餐人与餐次（决定热量预算）、选择食物堆叠高度；中间是带框结果；右栏是结构评估 8 项进度条。
+
+<p align="center">
+  <img src="docs/screenshots/01_gui_result.png" width="880" alt="识别结果页" />
+</p>
+
+这次识别出 6 样菜（咖喱 / 炒蛋 / 腊肠 / 三角薯饼 / 炒白菜 / 炒豆芽），合计 **1323 kcal、694 g**；
+米饭只占食物面积 1.5%（<4%），被判为误检并剔除——这是中餐场景最常见的检测异常。
+
+### 上位机：膳食建议
+
+顶部灰色框是**规则层**生成的「该加 / 该减」清单，下面是本地大模型（qwen2.5:1.5b，纯 CPU）展开的四节建议。
+
+<p align="center">
+  <img src="docs/screenshots/02_gui_advice.png" width="880" alt="膳食建议页" />
+</p>
+
+### 逐图识别效果
+
+<table>
+<tr>
+<td width="33%"><img src="docs/screenshots/cases/case_5dishes.jpg" alt="5 菜识别" /><br/><sub><b>5 菜全中</b>：方案C 5/5，基线 2/5</sub></td>
+<td width="33%"><img src="docs/screenshots/cases/case_4dishes.jpg" alt="4 菜识别" /><br/><sub><b>4 菜全中</b>：方案C 4/4，基线 2/4</sub></td>
+<td width="33%"><img src="docs/screenshots/cases/case_wrong_class.jpg" alt="错类样本" /><br/><sub><b>典型错类</b>：薯饼特写被判成炸鸡腿（两个模型同错）</sub></td>
+</tr>
+</table>
+
+更多原图与结果见 **[test_samples/](test_samples/)**。
 
 ---
 
-## 1. 快速开始
+## 快速开始
 
-两个入口：
+### 1. 环境
 
-| 入口 | 命令 | 适用 |
-|---|---|---|
-| **图形界面（上位机）** | 双击 `启动上位机.bat` 或 `py -3.10 上位机.py` | 演示、日常使用 |
-| 命令行 | `py -3.10 main.py` | 批量跑图、单图快速验证 |
+| 项 | 要求 |
+|---|---|
+| Python | 3.10（建议 `py -3.10`，避免 `python` 指向别的解释器） |
+| 操作系统 | Windows（`启动上位机.bat`）/ macOS / Linux 均可，脚本按 Windows 写 |
+| 磁盘 | 仓库含 3 个权重约 **143 MB** |
+| GPU | 可选。有 CUDA 就把 `detection.device` 改成 `cuda:0`，CPU 单图约 4-7 秒 |
+| Ollama | 可选。没有也能跑完检测 + 营养 + 规则结论，只是少一段自然语言建议 |
+
+### 2. 安装
 
 ```bash
-# 安装依赖
+git clone https://github.com/FutureDC4/Diet-food-recognition.git
+cd Diet-food-recognition
+
 py -3.10 -m pip install -r requirements.txt
+py -3.10 -m pip install PySide6-Essentials      # 只有上位机需要
+```
 
-# 交互式运行
-py -3.10 main.py
+> `torch 2.1.x` 必须配 `numpy<2`，否则会报 `_ARRAY_API not found`。`requirements.txt` 已锁好。
 
-# 一次性传参
+### 3. 启动上位机
+
+```bash
+py -3.10 上位机.py
+# 或双击 启动上位机.bat
+```
+
+界面操作顺序：**选/建用户档案 → 选餐次 → 选食物高度 → 选图片（或直接拖进来）→ 开始分析**。
+
+### 4. （可选）启动本地大模型
+
+```bash
+ollama pull qwen2.5:1.5b      # 约 1 GB，CPU 上 2-3 秒出 300 字
+ollama serve
+```
+
+想要更好的文风，换 `qwen2.5:7b` 并改 `config.yaml → ollama.model`，代码不用动。
+
+### 5. 命令行跑一张
+
+```bash
 py -3.10 main.py --image test_samples/input/05_chinese_oval_plate.jpg \
     --age 25 --gender 男 --height 175 --weight 70 --activity 1
-
-# 加 SAM 分割精修（重量更准，CPU 约 +55 秒/图）
-py -3.10 main.py --image test_samples/input/05_chinese_oval_plate.jpg \
-    --age 25 --gender 男 --height 175 --weight 70 --activity 1 --sam
-```
-
-实际运行输出：
-
-```
-================================
-  膳食识别系统（命令行版）
-================================
-
-请输入食物图片路径: test_samples/input/05_chinese_oval_plate.jpg
-...（输入个人信息）
-
-正在识别食物...
-  · 盘子已定位：置信度 0.91，直径约 201 px
-  · 尺度：8.04 px/cm（来源：盘子）→ 盘子直径约 25.0 cm
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-检测到以下食物：
-序号  | 食物                  | 置信度  | 重量      | 热量
-------------------------------------------------------------------
-1     | fried_chicken（炸鸡） | 0.91    | ~201 g    | 528 kcal
-2     | fried_dumplings（煎饺）| 0.80   | ~190 g    | 456 kcal
-3     | mung_bean_sprouts（豆芽）| 0.92  | ~88 g     | 31 kcal
-4     | chinese_sausage（香肠）| 0.84   | ~59 g     | 300 kcal
-5     | rice（米饭）          | 0.70    | ~65 g     | 84 kcal
-------------------------------------------------------------------
-总重量: 603 g    总热量: 1399 kcal
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-用户健康数据：
-  BMR（基础代谢）: 1674 kcal/天
-  TDEE（每日消耗）: 2302 kcal/天（活动量 1 轻度）
-  本餐热量占比: 60.8% TDEE
-  BMI: 22.9（正常）
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-正在调用 Ollama 生成膳食建议...
-（流式 Markdown 建议……）
 ```
 
 ---
 
-## 2. 中餐检测模型与改进实验
+## 系统架构
 
-### 2.1 数据集
+```mermaid
+flowchart LR
+    A[餐盘照片] --> B[盘子 / 餐具 OBB<br/>yolo11m-obb-plate]
+    A --> C[食物检测<br/>YOLOv11s · 18 类]
+    B --> D[尺度换算<br/>px per cm]
+    C --> E[面积 → 体积 → 重量]
+    D --> E
+    E --> F[营养换算<br/>food_reference.yaml]
+    F --> G[餐次配额 + 结构评估<br/>dri_cn.yaml]
+    G --> H[规则层<br/>总评 / 缺口 / 该加什么]
+    H --> I[Ollama 组织语言]
+    G --> J[(SQLite 历史)]
+    H --> K[Markdown 报告]
+```
+
+三层职责很清晰：
+
+| 层 | 负责 | 文件 |
+|---|---|---|
+| **感知层** | 检测、尺度、面积、重量 | `src/detection/`、`src/weight_estimation/`、`app/analyzer.py` |
+| **规则层** | 营养换算、餐次配额、结构判定、补什么 | `src/weight_estimation/nutrition_calculator.py`、`app/diet_rules.py`、`app/detection_rules.py` |
+| **表达层** | 把结论写成自然语言 | `app/prompt.py` + `src/llm/ollama_client.py` |
+
+> 关键设计：**表达层不许改判**。`diet_rules.build_summary()` 先写死一句总评，prompt 要求第一节原样引用。
+> 原因很实际——实测 qwen2.5:1.5b 两次把「膳食纤维 6.2g / 目标 10g」写成「纤维达标」和「纤维偏高」。
+
+---
+
+## 核心算法
+
+### 1. 尺度：像素 → 厘米
+
+OBB 检测叉 / 刀 / 勺 / 盘，用 `最长边(px) ÷ 真实尺寸(cm)`，多参考物取中位数：
+
+```
+px_per_cm = median([fork/18.5, knife/21.0, spoon/17.0, plate/25.0])
+```
+
+优先用餐具（尺寸标准），只有盘子时按 25 cm 标准盘，完全没有参考物时退化为「画面宽 40 cm」并告警。
+
+### 2. 重量：面积 → 克
+
+```
+面积(cm²) = bbox 像素面积 / px_per_cm² × area_fill_factor(0.80)
+体积(cm³) = 面积 × 高度（默认 3 cm，可按食物覆写 / 用户选档位）
+重量(g)   = 体积 × 密度
+```
+
+三重保护，避免「一份菜 1 kg」这种离谱值：
+
+| 约束 | 配置 | 作用 |
+|---|---|---|
+| bbox 填充率 | `area_fill_factor: 0.80` | bbox 是外接矩形，圆形食物天然大约 27% |
+| 单份上限 | `max_weight_by_food` | 按菜类设上限，抑制误检大框 |
+| 盘子面积约束 | `max_plate_fill_ratio: 0.85` | 所有食物面积之和 ≤ 盘子面积 × 0.85，超出按比例收缩 |
+
+### 3. 米饭三级处理
+
+中餐米饭最容易被菜压住，检测框会严重偏小。按「米饭框面积 / 全部食物面积」分三级：
+
+| 级别 | 条件 | 处理 |
+|---|---|---|
+| 一级 | ≥ 20% | 框够大，直接用检测值 |
+| 二级 | 4% ~ 20% | 被遮挡，按「占食物总面积 1/3」反推（`R = O/2` 使米饭占 1/3） |
+| 三级 | < 4% | 正常人不会只打这么一点饭，**判为误检直接剔除** |
+
+二级反推另有 250 g 上限，防止其他菜的大框把米饭带飞。
+
+### 4. 餐次配额 + 结构评估
+
+按 DRIs 餐次占比给本餐预算（**不做归一化**，否则午餐 40% 会被压成 36%）：早 25% / 午 40% / 晚 35%，
+加餐 10% 从午晚各匀 5%。
+
+以 65 kg 男性、TDEE 2556 kcal 为例，午餐预算 **1022 kcal（区间 920-1124）**、
+蛋白质 26 g、纤维 10 g、蔬菜 160 g、钠 ≤ 667 mg。
+
+然后在 8 项上逐条判定，界面用进度条展示，悬停可看解释：
+
+`热量` · `蛋白质` · `膳食纤维` · `蔬菜占比` · `主食供能比` · `脂肪供能比` · `钠` · `促炎负荷`
+
+### 5. 建议怎么生成
+
+| 步骤 | 谁做 | 产出 |
+|---|---|---|
+| ① 算 | 规则层 | 总评一句话、缺口清单、「加 100g 清炒时蔬 / 减 80g 米饭」这类可执行条目 |
+| ② 写 | Ollama | 四节建议：这餐怎么样 / 现在补什么 / 下一餐怎么安排 / 一句话提醒 |
+| ③ 兜底 | — | Ollama 未启动时，①②的全部结论照常显示，只少自然语言段落 |
+
+营养数据来源：**中国食物成分表（第 6 版）** + **中国居民膳食营养素参考摄入量（DRIs 2023）** +
+**中国居民膳食指南（2022）**，逐项写在 `data/food_reference.yaml` 与 `data/dri_cn.yaml` 的注释里。
+碘和维生素 D 标了 `tracked: false`——菜品成分表估不出来，不参与缺口判断，免得把正常现象报成问题。
+
+> 完整规则说明（阈值、公式、参数索引）见 **[docs/上位机说明.md](docs/上位机说明.md)**。
+
+---
+
+## 模型与改进实验
+
+### 数据集
 
 | 项 | 值 |
 |---|---|
 | 类别数 | **18 类**中式菜品 |
-| 训练集 | 2495 张 |
-| 验证集 | 131 张 |
-| 测试集 | 94 张 |
-| 标注格式 | YOLO bbox |
-| 配置文件 | `configs/chinese_food_18.yaml` |
+| 训练 / 验证 / 测试 | 2495 / 131 / 94 张 |
+| 标注 | YOLO bbox，俯拍餐盘 |
+| 配置 | `configs/chinese_food_18.yaml` |
 
-**18 个类别**：
-`carrot_eggs`（胡萝卜炒蛋）、`chicken_nuggets`（鸡块）、`chinese_cabbage`（白菜）、
-`chinese_sausage`（中式香肠）、`curry`（咖喱）、`fried_chicken`（炸鸡）、`fried_dumplings`（煎饺）、
-`fried_eggs`（炒蛋）、`mung_bean_sprouts`（绿豆芽）、`rice`（米饭）、`triangle_hash_brown`（三角薯饼）、
-`water_spinach`（空心菜）、`pumpkin`（南瓜）、`sweet_potato`（红薯）、`fried_string_beans`（干煸豆角）、
-`fried_chicken_legs`（炸鸡腿）、`fried_noodles`（炒面）、`loofah`（丝瓜）
+`carrot_eggs`、`chicken_nuggets`、`chinese_cabbage`、`chinese_sausage`、`curry`、`fried_chicken`、
+`fried_dumplings`、`fried_eggs`、`mung_bean_sprouts`、`rice`、`triangle_hash_brown`、`water_spinach`、
+`pumpkin`、`sweet_potato`、`fried_string_beans`、`fried_chicken_legs`、`fried_noodles`、`loofah`
 
-### 2.2 改进方案
+### 两组改进
 
-针对「**一盘多菜、菜品互相遮挡、相似外观**」的中餐场景，做了两组改进：
-
-| 方案 | 改进内容 | 实现文件 |
+| 方案 | 做法 | 文件 |
 |---|---|---|
-| **A. CBAM + WIoU** | Backbone 的 C3k2 后插入 CBAM；CIoU 换 WIoU v3 | `models/cbam.py`、`models/wiou.py` |
-| **B. CBAM-neck + WIoU** | Neck 的 P3/P4 特征后插入 CBAM；CIoU 换 WIoU v3 | `models/yolo11s-cbam-neck.yaml` |
+| **A**（失败） | Backbone 第 10 层 C2PSA 换成 CBAM + CIoU 换 WIoU v3 | `models/yolo11s-cbam.yaml` |
+| **C**（采用） | 保持 0-22 层与原生完全一致，Neck 的 P3/P4 输出后各加一个 CBAM（reduction 8），Detect 前融合；仍用 WIoU v3 | `models/yolo11s-cbam-neck.yaml` |
 
-**为什么是 CBAM 而不是 SE**：SE 只做通道注意力，中餐场景更重要的是**空间注意力**
-（食物在盘中的位置、遮挡边界、盘子/桌面干扰抑制）。CBAM = 通道 + 空间双注意力，更对口。
+**为什么是 CBAM 而不是 SE**：中餐场景的核心难点是空间维度——菜在盘里的位置、互相遮挡的边界、
+盘子边缘与桌面的干扰。SE 只有通道注意力，CBAM = 通道 + 空间，更对口。
 
-**为什么加 WIoU**：CIoU 对所有质量的框一视同仁，WIoU 的动态非单调聚焦机制让模型
-更关注「差一点就对」的样本，提升定位精度——而框准不准直接决定面积→重量→热量的准确性。
+**为什么加 WIoU**：CIoU 对所有质量的框一视同仁，WIoU 的动态非单调聚焦让模型更关注「差一点就对」的样本。
+而框准不准直接决定面积 → 重量 → 热量，这条链路上定位误差会被放大。
 
-### 2.3 实验结果（test 集，18 类）
+**方案 A 为什么失败**：在深层特征插注意力会破坏 COCO 预训练的特征分布，加载预训练权重后
+索引错位 / 通道数不匹配，且 150 轮不足以重新收敛（mAP50 掉 4.09）。
+
+### 检测指标（test 集 94 张，同一数据划分 / 超参 / 评估脚本）
 
 | 模型 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 | 训练耗时 |
 |---|---|---|---|---|---|
-| **基线**（yolo11s + CIoU） | 75.76% | 68.47% | 74.63% | **50.24%** | 4260s |
-| + CBAM（backbone）+ WIoU | 73.29% | 67.02% | 70.54% | 45.92% | 5569s |
-| **+ CBAM（neck）+ WIoU** ⭐ | 74.66% | **73.13%** | **76.13%** | 48.43% | 6221s |
+| 基线（yolo11s + CIoU） | 75.76% | 68.47% | 74.63% | **50.24%** | 4260 s |
+| + CBAM(backbone) + WIoU | 73.29% | 67.02% | 70.54% | 45.92% | 5569 s |
+| **+ CBAM(neck) + WIoU** ⭐ | 74.66% | **73.13%** | **76.13%** | 48.43% | 6221 s |
 
-**结论**：
+**怎么读这张表**：
 
-1. **方案 B（Neck 端 CBAM）在 mAP@0.5 和 Recall 上均优于基线**：
-   - mAP@0.5：**76.13% vs 74.63%（+1.50）**
-   - Recall：**73.13% vs 68.47%（+4.66）** ← 漏检显著减少
-2. **Recall 提升是本项目最关心的指标**：一盘多菜场景下，漏检一道菜比框得不够准影响更大
-   （漏了就没有重量和热量，整餐营养统计直接失真）。
-3. **方案 A（Backbone 端 CBAM）效果不佳**（mAP50 -4.09），推测是深层特征插入注意力后
-   破坏了预训练权重的特征分布，且训练轮次不足以重新收敛。
-4. **mAP@0.5:0.95 略降（-1.81）**，说明高 IoU 阈值下的定位精度略有牺牲，
-   但对「面积→重量」的量级估算影响有限（重量误差本就 ±30%~50%）。
-5. 业务侧交叉验证：**16 张 test 图菜品级命中率 86.0%（改进版）vs 66.7%（基线）**。
+- 方案C 在 **mAP@0.5 +1.50、Recall +4.66**，召回提升是本项目最在意的——漏一道菜就没有重量和热量，整餐统计直接失真。
+- **mAP@0.5:0.95 −1.81**，高 IoU 阈值下定位略逊，但重量误差本就是 ±30%~50%，量级估算不受影响。
+- 需要说明：单 seed、test 仅 94 张，配对 t 检验下**未达统计显著**（新-基线 −0.49）。
+  这是「趋势性改进 + 端到端业务验证」，不是「显著优于基线」的结论。
 
-> 详细消融过程、CBAM/WIoU 代码位置与启用方法见 **[docs/模型改进详解.md](docs/模型改进详解.md)**。
-> 完整训练曲线（results.png / PR 曲线 / 混淆矩阵）见 **[docs/training_results/](docs/training_results/)**，
-> 原始评估 JSON 见 **[docs/metrics/](docs/metrics/)**。
+### 端到端业务验证（16 张 test 图，与上位机同一条链路）
 
-### 2.4 权重文件
+| 指标 | 方案C | 基线 |
+|---|---|---|
+| 菜品级命中（这盘菜有没有被认出来） | **86.0%（49/57）** | 66.7%（38/57） |
+| 框级召回（IoU≥0.5 且类别一致） | **71.4%** | 55.6% |
+| 框级精确 | 88.2% | 89.7% |
+| F1 | **78.9%** | 68.6% |
 
-| 文件 | 用途 | 大小 | 是否入库 |
-|---|---|---|---|
-| `models/weights/chinese_food_cbam_neck.pt` | **默认部署**：方案 B（CBAM-neck + WIoU） | 19 MB | ✅ 已上传 |
-| `models/weights/chinese_food.pt` | 基线（yolo11s + CIoU），用于对比 | 19 MB | ✅ 已上传 |
-| `models/weights/yolo11m-obb-plate.pt` | 盘子 + 餐具 OBB 检测（4 类） | 41 MB | ✅ 已上传 |
-| `yolo11s.pt` / `yolo11m.pt` / `yolo11n.pt` | COCO 预训练基础模型 | 5-39 MB | ❌ 首次运行自动下载 |
+逐图明细（节选 10 张，多菜场景为主；完整 16 张的汇总见上表）：
 
-切换模型只需改 `config.yaml` 一行：
+| # | 图片 | 真值菜品 | 方案C 命中 | 基线 命中 | 本餐热量 | 结构达标 |
+|---|---|---|---|---|---|---|
+| 1 | `114_191107_0007` | 5 | **5/5** | 4/5 | 1197 kcal | 1/8 |
+| 2 | `img_95` | 5 | 5/5 | 5/5 | 1185 kcal | 2/8 |
+| 3 | `img_47` | 6 | **5/6** | 4/6 | 1082 kcal | 4/8 |
+| 4 | `img_96` | 5 | **5/5** | 2/5 | 1352 kcal | 2/8 |
+| 5 | `img_87` | 5 | 4/5 | 4/5 | 963 kcal | 4/8 |
+| 6 | `img_143` | 4 | **4/4** | 2/4 | 1073 kcal | 4/8 |
+| 7 | `img_60` | 4 | 4/4 | 4/4 | 1358 kcal | 1/8 |
+| 8 | `s2_images-10` | 1 | 1/1 | 1/1 | 100 kcal | 3/8 |
+| 9 | `s2_sweet-potato` | 1 | 1/1 | 1/1 | 360 kcal | 2/8 |
+| 10 | `triangle_hash_brown_8` | 1 | 0/1 | 0/1 | 600 kcal | 1/8 |
+| | **合计** | **37** | **34/37（91.9%）** | **27/37（73.0%）** | | |
+
+两个模型共同的弱点：`carrot_eggs` 在多张图里全漏；`triangle_hash_brown` 特写会被判成
+`fried_chicken_legs`（置信度 0.85，两个模型同错）——属于训练集里这类样本过于单一。
+
+### 权重文件
+
+| 文件 | 用途 | 大小 |
+|---|---|---|
+| `models/weights/chinese_food_cbam_neck.pt` | **默认部署**：方案C（CBAM-neck + WIoU） | 19 MB |
+| `models/weights/chinese_food.pt` | 基线（yolo11s + CIoU），对比用 | 19 MB |
+| `models/weights/yolo11m-obb-plate.pt` | 盘子 + 餐具 OBB（4 类） | 41 MB |
+| `yolo11n.pt` 等 COCO 基础模型 | 首次运行由 ultralytics 自动下载 | — |
+
+切换只要改一行：
 
 ```yaml
 paths:
   food_model: models/weights/chinese_food_cbam_neck.pt   # 换成 chinese_food.pt 即切回基线
 ```
 
----
-
-## 3. 环境说明（本机实测）
-
-| 项 | 值 |
-|---|---|
-| 解释器 | Python 3.10.11 |
-| 关键依赖 | ultralytics 8.3.158 / torch 2.1.0 / torchvision 0.16.0 / opencv-python 4.11 / numpy 1.26.4 / segment-anything 1.0 / loguru / PySide6 |
-| 训练设备 | NVIDIA GPU（Ultralytics 自动选择） |
-| 推理设备 | CPU 可跑（`config.yaml: detection.device`） |
-| Ollama | `http://localhost:11434`，默认 `qwen2.5:1.5b`，建议换 `qwen2.5:7b` |
-| SAM（可选） | `sam_vit_h_4b8939.pth`（2.4 GB），需单独下载，见 §9 |
-
-> 直接敲 `python` 可能指向别的解释器（无依赖），建议统一用 `py -3.10 main.py`。
+> 消融全过程、CBAM/WIoU 代码位置、启用清单见 **[docs/模型改进详解.md](docs/模型改进详解.md)**。
+> 训练曲线 / 混淆矩阵 / 超参在 **[docs/training_results/](docs/training_results/)**，
+> 原始评估 JSON 在 **[docs/metrics/](docs/metrics/)**。
 
 ---
 
-## 4. 目录结构
+## 配置说明
 
-```
-膳食模型x/
-├── 上位机.py                   # 图形界面入口（PySide6）
-├── 启动上位机.bat              # 双击启动
-├── main.py                     # 命令行入口
-├── requirements.txt
-├── config.yaml                 # 全局配置（模型路径 / rice_rule / height_levels / ollama）
-├── README.md
-├── app/                        # 上位机
-│   ├── main_window.py          # 主窗口：三页签、拖拽上传、三线程
-│   ├── analyzer.py             # 单图分析：检测 → 估重 → 营养 → 配额/结构
-│   ├── detection_rules.py      # 米饭三级处理 + 食物高度档位
-│   ├── diet_rules.py           # 餐次配额 + 结构评估 + 该加什么
-│   ├── widgets.py              # 结构评估面板
-│   ├── prompt.py               # 膳食建议 prompt
-│   ├── render.py               # PIL 中文标签绘制
-│   ├── user_store.py           # 用户档案（data/users.json）
-│   └── theme.py                # QSS
-├── models/
-│   ├── cbam.py                 # CBAM 注意力模块
-│   ├── wiou.py / wiou_patch.py # WIoU v1/v2/v3 损失
-│   ├── yolo11s-cbam.yaml       # 方案A：Backbone C3k2 后加 CBAM
-│   ├── yolo11s-cbam-neck.yaml  # 方案B：Neck P3/P4 后加 CBAM（默认部署）
-│   ├── yolo11m-cbam.yaml       # m 规模的结构定义
-│   └── weights/                # 权重（3 个已上传，见 §2.4）
-├── data/
-│   ├── food_reference.yaml     # 营养参考（=检测白名单）：能量/蛋白/脂肪/碳水/纤维/钠/微量元素
-│   ├── dri_cn.yaml             # 中国居民 DRIs 2023 + 膳食指南 2022
-│   ├── density_table.yaml      # 密度表（g/cm³）
-│   ├── reference_sizes.yaml    # 参考物真实尺寸（叉/刀/勺/盘，cm）
-│   ├── images/                 # 内部示例图
-│   └── history.db              # SQLite 历史（首次运行自动创建）
-├── src/
-│   ├── detection/              # plate_detector / scale_calculator / food_detector / sam_segmenter
-│   ├── weight_estimation/      # portion_estimator / nutrition_calculator
-│   ├── health/                 # bmr_calculator（BMR/TDEE/BMI）
-│   ├── llm/                    # ollama_client（流式+降级）/ prompt_builder
-│   ├── database/               # db_manager（SQLite 历史 + 当日汇总 + CSV 导出）
-│   └── utils/                  # config_loader / logger / image_utils / food_labels
-├── configs/                    # 数据集 yaml（chinese_food_18.yaml 等）
-├── tools/                      # 训练 / 评估 / 数据清洗 / GUI 冒烟测试（21 个脚本）
-├── tests/                      # detection / weight / health / llm / diet_rules / e2e
-├── test_samples/               # 测试实例图片
-│   ├── input/                  #   模型测试原图（6 张）
-│   ├── results/                #   识别结果可视化（3 张）
-│   └── README.md               #   每张图的场景与识别明细
-├── docs/
-│   ├── 上位机说明.md            # 餐次配额、结构评估、米饭三级、营养数据来源
-│   ├── 模型改进详解.md          # CBAM + WIoU：位置、原因、启用清单、消融实验
-│   ├── training_results/       # 三组实验的曲线 + 混淆矩阵 + 超参
-│   └── metrics/                # test 集评估 JSON
-├── logs/                       # loguru 日志（不入库）
-└── _upstream/food_calories/    # 原始项目副本（只读参考，不入库）
-```
-
----
-
-## 5. 核心算法
-
-### 5.1 尺度（像素 → 厘米）
-
-OBB 检测叉/刀/勺/盘，`OBB 最长边(px) ÷ 真实尺寸(cm)`，多参考物取**中位数**：
-
-```
-px_per_cm = median([fork/18.5, knife/21.0, spoon/17.0, plate/25.0])
-```
-
-优先用餐具（尺寸标准），只有盘子时按 25 cm 标准盘；完全没有参考物时退化为「画面宽 40 cm」并告警。
-
-### 5.2 重量（bbox 面积 → 克）
-
-```
-整图 → YOLO 食物 bbox（盘子 OBB 只用来定尺度）
-面积(cm²) = bbox 像素面积 / px_per_cm² × area_fill_factor(0.80)
-体积(cm³) = 面积 × 高度（默认 3 cm，可按食物覆写）
-重量(g)   = 体积 × 密度
-```
-
-> 曾试过「盘子 OBB 外扩 10% → 旋转裁剪摆正 → 再检测」，实测明显更差：
-> 25 张 test 图框级召回 51.4%（全图 77.0%），精确 60.3%（全图 82.6%）。
-> 该路径保留在 `plate.crop_for_detection`，默认 `false`。
-
-三重保护，避免「一份菜 1 kg」这种离谱值：
-
-| 约束 | 配置 | 作用 |
-|---|---|---|
-| bbox 填充率 | `area_fill_factor: 0.80` | bbox 是外接矩形，食物填不满（圆形食物 bbox 天然大约 27%） |
-| 单份上限 | `max_weight_by_food` | 抑制误检大框 |
-| 盘子面积约束 | `max_plate_fill_ratio: 0.85` | 所有食物面积之和 ≤ 盘子面积×0.85，超出按比例收缩 |
-
-同类多框自动合并（一块鸡胸 + 一块鸡腿 → 一个 `fried_chicken`）。
-
-### 5.3 米饭遮挡三级处理
-
-中餐场景米饭常被菜品遮盖，检测框面积会严重偏小，因此：
-
-1. **正常检测**：米饭 bbox 面积 / 总食物面积 ≥ 15% → 直接使用
-2. **检测到但过小**（被遮挡）：按总食物面积 × `rice_hidden_ratio`（默认 0.33）估算
-3. **完全未检测到**：不做处理（可能确实没有米饭）
-
-### 5.4 SAM 分割精修（可选，`--sam`）
-
-对每个食物 bbox 用 SAM 做框提示分割，用**掩膜像素数**代替 bbox 面积（`mask_fill_factor=0.95`）。
-实测同一张图：bbox 方案 204g+153g → SAM 方案 119g+79g（掩膜剔除了方框里的空隙，更接近真实）。
-
-CPU 上每张图约 **55-80 秒**（`vit_h` 编码 1024×1024 是瓶颈），因此默认关闭。
-
-### 5.5 热量与健康
-
-```
-热量(kcal) = 重量 × kcal_per_100g / 100
-BMR  = 10×体重 + 6.25×身高 - 5×年龄 + (男 +5 / 女 -161)   # Mifflin-St Jeor
-TDEE = BMR × 活动系数(1.375 / 1.55 / 1.725 / 1.9)
-本餐占比 = 热量 / TDEE
-```
-
-### 5.6 LLM 建议
-
-`prompt_builder` 组装「个人信息 + BMR/TDEE/BMI + 食物清单 + 总重量热量 + 三大营养素 + TDEE 占比 +
-餐次配额 + 结构评估」，要求输出 4 节 Markdown（营养评估 / 需求匹配 / 搭配建议 / 个性化建议），
-`ollama_client` 走 `POST /api/generate` **流式**打印。
-
-**降级兜底**：服务未启动 → 打印排查步骤；模型未拉取 → 提示 `ollama pull`；中途断流 → 保留已输出内容。
-检测与营养结果始终可用。
-
-**餐次配额 + 结构评估**：输入早餐/午餐/晚餐，按 DRI 餐次占比给出该餐合理热量区间，
-并评估蛋白质 / 膳食纤维 / 蔬菜占比 / 主食占比，输出「该加什么」。详见 `docs/上位机说明.md`。
-
----
-
-## 6. 配置说明（config.yaml）
+全部集中在 `config.yaml`，改完重启生效，不用动代码。
 
 | 配置项 | 默认 | 说明 |
 |---|---|---|
-| `paths.food_model` | `models/weights/chinese_food_cbam_neck.pt` | 部署模型（方案 B）；改 `chinese_food.pt` 切回基线 |
-| `paths.plate_model` | `models/weights/yolo11m-obb-plate.pt` | 盘子 + 餐具 OBB |
-| `detection.device` | `cpu` | 有 GPU 改 `cuda:0`（可同时 `half: true`） |
-| `detection.conf_threshold` | `0.25` | 食物置信度；误检多就抬到 0.35-0.45 |
-| `detection.filter_unknown_food` | `true` | 营养表白名单过滤 |
-| `plate.crop_for_detection` | `false` | 是否先裁盘再检测；实测裁剪明显掉点 |
-| `segmentation.enabled` | `false` | 是否默认启用 SAM（也可 `--sam`） |
-| `weight_estimation.area_fill_factor` | `0.80` | bbox 填充率；估重偏高就降到 0.65 |
-| `weight_estimation.default_height_cm` | `3.0` | 食物堆叠高度（汤菜 2.0，馒头/蛋糕 5-6） |
-| `weight_estimation.max_plate_fill_ratio` | `0.85` | 食物面积 / 盘子面积上限 |
-| `ollama.model` | `qwen2.5:1.5b` | 换 `qwen2.5:7b` 建议质量明显更好 |
+| `paths.food_model` | `chinese_food_cbam_neck.pt` | 部署模型；换 `chinese_food.pt` 切回基线 |
+| `paths.plate_model` | `yolo11m-obb-plate.pt` | 盘子 + 餐具 OBB |
+| `detection.device` | `cuda:0` | 无 GPU 改 `cpu`（`half` 会自动忽略） |
+| `detection.conf_threshold` | `0.25` | 误检多就抬到 0.35-0.45 |
+| `detection.filter_unknown_food` | `true` | 用营养表白名单过滤非食物类别 |
+| `plate.crop_for_detection` | `false` | 是否先裁盘再检测；实测裁剪明显掉点，见下 |
+| `weight_estimation.area_fill_factor` | `0.80` | 估重偏高就降到 0.65 |
+| `weight_estimation.default_height_cm` | `3.0` | 食物默认堆叠高度 |
+| `rice_rule.trust_ratio / target_ratio / reject_ratio` | `0.20 / 0.3333 / 0.04` | 米饭三级阈值 |
+| `height_levels` | 薄摊 0.75 / 常规 1.00 / 堆高 1.35 | 界面三档高度系数 |
+| `ollama.model` | `qwen2.5:1.5b` | 换 7b 质量明显更好 |
+| `ollama.num_gpu` | `0` | 0 = 纯 CPU；-1 = 交给 Ollama 决定（旧驱动在 GPU 上会报错） |
 | `database.enabled` | `true` | 是否写 SQLite 历史 |
 
----
+**关于 `crop_for_detection`**：曾试过「盘子 OBB 外扩 → 旋转裁剪摆正 → 再检测」，
+25 张 test 图对比后放弃：
 
-## 7. 命令行参数
+| 路径 | 框级召回 | 精确 | 命中框面积/真值 |
+|---|---|---|---|
+| 盘内旋转裁剪 | 51.4% | 60.3% | 1.38 |
+| 整图检测 | **77.0%** | **82.6%** | 1.31 |
 
-```
---image 路径/URL   --age 25   --gender 男   --height 175   --weight 70   --activity 1
---sam               启用 SAM 分割精修（更准、更慢）
---no-llm            跳过 Ollama，只输出检测与营养
---no-save           不保存标注图
---no-db             不写 SQLite 历史
---model / --host    覆盖 Ollama 模型/地址
---food-model / --plate-model   覆盖模型路径（试新权重用）
---verbose           输出 DEBUG 日志
-```
-
-返回码：`0` 成功、`2` 未识别到食物、`1` 参数/运行错误、`130` 手动中断。
+旋转后的裁剪图会让模型给出更大的框，盘边食物还会被切掉。现在盘子只负责换算 px/cm。
 
 ---
 
-## 8. 测试
+## 命令行用法
 
 ```bash
-py -3.10 tests/test_detection.py   # 盘子/尺度/食物检测/旋转裁剪/SAM checkpoint
-py -3.10 tests/test_weight.py      # 密度/重量合理性/上限/盘子约束/尺度平方律/热量
-py -3.10 tests/test_health.py      # BMR/TDEE/BMI/性别别名/非法输入
-py -3.10 tests/test_llm.py         # Prompt 完整性/在线流式/离线降级/缺失模型
-py -3.10 tests/test_diet_rules.py  # 餐次配额/结构评估/米饭三级
-py -3.10 tests/test_e2e.py         # 端到端（含 LLM）
+py -3.10 main.py                                    # 交互式
+py -3.10 main.py --image 图片路径 --age 25 --gender 男 --height 175 --weight 70 --activity 1
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--image` | 图片路径或 URL；不给则进入交互模式 |
+| `--age --gender --height --weight --activity` | 身体信息，`activity` 取 1-4 |
+| `--sam` | 对每个框跑 SAM，用掩膜面积代替 bbox（更准，CPU +55-80 s/图） |
+| `--no-llm` | 跳过 Ollama，只输出检测与营养 |
+| `--no-save / --no-db` | 不保存标注图 / 不写历史 |
+| `--model / --host` | 覆盖 Ollama 模型与地址 |
+| `--food-model / --plate-model` | 覆盖权重路径（试新模型用） |
+| `--verbose` | DEBUG 日志 |
+
+返回码：`0` 成功、`2` 未识别到食物、`1` 参数或运行错误、`130` 手动中断。
+
+---
+
+## 目录结构
+
+```
+Diet-food-recognition/
+├── 上位机.py                    # PySide6 图形界面入口
+├── 启动上位机.bat               # 双击启动（Windows）
+├── main.py                      # 命令行入口
+├── config.yaml                  # 全局配置
+├── requirements.txt
+├── app/                         # 上位机
+│   ├── main_window.py           #   主窗口：三页签、拖拽上传、三线程（检测/绘图/LLM）
+│   ├── analyzer.py              #   单图分析：检测 → 估重 → 营养 → 配额/结构
+│   ├── detection_rules.py       #   米饭三级 + 高度档位
+│   ├── diet_rules.py            #   餐次配额 + 结构评估 + 该加什么
+│   ├── widgets.py               #   结构评估面板与指标卡
+│   ├── prompt.py                #   建议 prompt（含结论锁定）
+│   ├── render.py                #   PIL 中文标签绘制
+│   ├── user_store.py            #   用户档案（data/users.json）
+│   └── theme.py                 #   QSS
+├── models/
+│   ├── cbam.py                  # CBAM 注意力（通道 + 空间）
+│   ├── wiou.py / wiou_patch.py  # WIoU v1/v2/v3（猴补丁替换 BboxLoss）
+│   ├── yolo11s-cbam-neck.yaml   # 方案C 结构（默认部署）
+│   ├── yolo11s-cbam.yaml        # 方案A 结构
+│   └── weights/                 # 3 个权重，见上文
+├── data/
+│   ├── food_reference.yaml      # 营养表（= 检测白名单）：能量/P/F/C/纤维/钠/微量元素/烹调/促炎
+│   ├── dri_cn.yaml              # DRIs 2023 + 膳食指南 2022
+│   ├── density_table.yaml       # 密度表（g/cm³）
+│   ├── reference_sizes.yaml     # 参考物真实尺寸（cm）
+│   └── history.db               # SQLite 历史（首次运行创建）
+├── src/
+│   ├── detection/               # plate_detector / food_detector / scale_calculator / sam_segmenter
+│   ├── weight_estimation/       # portion_estimator / nutrition_calculator
+│   ├── health/                  # bmr_calculator（BMR / TDEE / BMI）
+│   ├── llm/                     # ollama_client（流式 + 降级）
+│   ├── database/                # db_manager（历史 + 当日汇总 + CSV 导出）
+│   └── utils/                   # config_loader / image_utils / logger / food_labels
+├── configs/                     # 数据集 yaml
+├── tools/                       # 训练 / 评估 / 数据清洗 / 批量测试 / 界面冒烟（19 个脚本）
+├── tests/                       # detection / weight / health / llm / diet_rules / e2e
+├── test_samples/                # 示例图片与识别结果
+├── docs/
+│   ├── 上位机说明.md             # 配额、结构评估、米饭三级、营养来源
+│   ├── 模型改进详解.md           # CBAM + WIoU：位置、原因、消融
+│   ├── training_results/        # 三组实验曲线 + 混淆矩阵 + 超参
+│   ├── metrics/                 # test 集评估 JSON
+│   └── screenshots/             # README 用截图
+└── logs/                        # loguru 日志（不入库）
 ```
 
 ---
 
-## 9. 已知限制
+## 测试
 
-1. **中餐类别只有 18 类**，覆盖常见食堂菜品；未收录的菜会被漏检或误判成邻近类别。
-   扩展方式：训练新模型 → 覆盖 `.pt` → 把类别 key 追加到 `food_reference.yaml` / `density_table.yaml`。
-2. **重量是粗估**：bbox 面积 + 固定高度 + 密度表，误差通常 **±30%~50%**；汤汁、堆叠类菜品偏差更大，
-   只适合「量级判断」，不适合精确记账。开 `--sam` 可明显改善（掩膜更贴轮廓）。
-3. **遮挡**：一盘多菜互相压盖时，被压住的菜面积会被低估；米饭有专门的三级补偿规则，其他菜品没有。
-4. **拍摄角度**：建议俯拍（90°）。45° 斜拍时盘子 OBB 变梯形，尺度与面积都会偏低。
-5. **CPU 推理**：检测 1-4 s；SAM +55-80 s；Ollama 1.5b 生成 10-40 s。
-6. **小模型建议质量有限**：`qwen2.5:1.5b` 偶有事实性错误，建议 `ollama pull qwen2.5:7b`。
+```bash
+py -3.10 tests/test_detection.py    # 盘子 / 尺度 / 食物检测 / 旋转裁剪映射
+py -3.10 tests/test_weight.py       # 密度 / 重量合理性 / 上限 / 盘子约束
+py -3.10 tests/test_health.py       # BMR / TDEE / BMI / 非法输入
+py -3.10 tests/test_llm.py          # Prompt 完整性 / 在线流式 / 离线降级
+py -3.10 tests/test_diet_rules.py   # 餐次配额 / 结构评估 / 米饭三级 / 总评自洽
+py -3.10 tests/test_e2e.py          # 端到端（含 LLM）
 
----
+py -3.10 tools/gui_smoke_test.py    # 界面冒烟测试，自动截图到 runs/gui/
+```
 
-## 10. 后续升级路线
+批量对比两个权重（走上位机同一条链路，输出 HTML 报告）：
 
-| 目标 | 做法 | 代码改动 |
-|---|---|---|
-| 扩展中餐类别 | 补数据训练，覆盖 `.pt` + 两个 yaml 加 key | **0 行** |
-| 进一步提升召回 | 试 CBAM-neck + Repulsion Loss（针对菜品遮挡） | 仅训练侧 |
-| 更准重量 | 默认开 `segmentation.enabled: true`（SAM 掩膜），或接 Depth Anything v2 | 改配置 / 新增模块 |
-| 多餐累积 | `db_manager` 已有当日汇总，加「今日总摄入 vs TDEE」视图 | 约 50 行 |
-| 换大模型 | `ollama pull qwen2.5:7b` + 改配置 | 0 行 |
+```bash
+py -3.10 tools/test_plan_c.py --count 16
+# → runs/plan_c_test/report.html，含逐图预测/真值/命中/热量/达标项
+```
 
 ---
 
-## 11. 常见问题
+## 已知限制
+
+1. **只有 18 类**，覆盖常见食堂菜品；未收录的菜会漏检或被判成相近类别。
+   扩展方式：训练新模型 → 覆盖 `.pt` → 两个 yaml 补类别 key，业务代码 0 改动。
+2. **重量是粗估**：bbox 面积 + 高度 + 密度表，误差通常 ±30%~50%，只适合量级判断。
+   开 `--sam` 或改用分割模型能明显改善。
+3. **遮挡**：一盘多菜互相压盖时被压住的面积会低估；米饭有三级补偿，其他菜没有。
+4. **拍摄角度**：建议俯拍（90°）。45° 斜拍时盘子 OBB 变梯形，尺度和面积都会偏低。
+5. **速度**：CPU 检测 4-7 s、Ollama 1.5B 生成 10-40 s；GPU 下检测约 1 s。
+6. **小模型建议质量**：`qwen2.5:1.5b` 仍偶有措辞偏差，建议 `ollama pull qwen2.5:7b`。
+
+---
+
+## 常见问题
 
 **Q：`ModuleNotFoundError: No module named 'ultralytics'`**
-A：用错解释器了。装依赖和运行都统一用 `py -3.10`。
+装依赖和运行要用同一个解释器，统一 `py -3.10`。
 
-**Q：中文路径图片读不进来？**
-A：已处理（`np.fromfile + cv2.imdecode`），支持 `.jpg/.jpeg/.png/.bmp/.webp/.tif/.tiff`。
+**Q：中文路径的图片读不进来？**
+已处理（`np.fromfile` + `cv2.imdecode`），支持 jpg/jpeg/png/bmp/webp/tif。
 
 **Q：没检测到盘子？**
-A：照片最好带完整盘子或刀叉勺；否则退到整图检测 + 画面宽度假设，误差变大。
+不影响主体流程，尺度会退化到「画面宽 40 cm」，误差变大。建议照片里带上完整盘边或餐具。
 
-**Q：某些中餐菜识别不出来？**
-A：当前模型 18 类，未收录的菜属于预期漏检。可参照 `tools/train_chinese.py` 自己扩类重训。
+**Q：某些菜识别不出来？**
+当前 18 类，未收录属于预期漏检。`tools/train_chinese.py` 可扩类重训。
 
-**Q：Ollama 说没有模型？**
-A：`ollama pull qwen2.5:1.5b`，或把 `config.yaml` 的 `ollama.model` 改成 `ollama list` 里已有的。
+**Q：Ollama 报没有模型？**
+`ollama pull qwen2.5:1.5b`，或把 `ollama.model` 改成 `ollama list` 里已有的。
 
-**Q：只想看检测结果？**
-A：加 `--no-llm`。
+**Q：Ollama 在 GPU 上报 `CUDA error: device kernel image is invalid`？**
+驱动太旧。先按默认 `num_gpu: 0` 走 CPU（1.5B 约 2-3 秒），升级驱动后改回 `-1`。
 
-**Q：想跑 SAM 精修但提示找不到 checkpoint？**
-A：SAM 权重 2.4 GB 未随仓库分发，请从
-`https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth` 下载后放到
-`config.yaml: segmentation.sam_checkpoint` 指定的路径。
+**Q：想跑 SAM 但提示找不到 checkpoint？**
+SAM 权重 2.4 GB 未随仓库分发，从
+[官方地址](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth)
+下载后放到 `config.yaml → segmentation.sam_checkpoint`。
+
+**Q：数据集在哪？**
+未随仓库分发（体积大）。`configs/chinese_food_18.yaml` 里的 `path` 需改成本机路径，
+数据按 `train/valid/test` + `images/labels` 结构放置即可。
 
 ---
 
-## 引用与致谢
+## 致谢
 
-- 原始思路：[DidntRead/food_calories](https://github.com/DidntRead/food_calories)（Sofia University 课程项目）
+- 原始思路：[DidntRead/food_calories](https://github.com/DidntRead/food_calories)
 - 检测框架：[Ultralytics YOLOv11](https://github.com/ultralytics/ultralytics)
-- 注意力机制：CBAM, *ECCV 2018*
-- 损失函数：Wise-IoU, *arXiv 2023*
-- 分割精修：Meta [Segment Anything](https://github.com/facebookresearch/segment-anything)
-- 营养数据：中国居民膳食营养素参考摄入量（DRIs 2023）、中国居民膳食指南（2022）
+- 注意力机制：[CBAM, ECCV 2018](https://arxiv.org/abs/1807.06521)
+- 损失函数：[Wise-IoU, arXiv 2023](https://arxiv.org/abs/2301.10051)
+- 分割精修：[Segment Anything](https://github.com/facebookresearch/segment-anything)
+- 营养数据：[中国食物成分表 第6版](https://www.chinanutri.cn/)、DRIs 2023、中国居民膳食指南（2022）
+- 本地推理：[Ollama](https://ollama.com/)

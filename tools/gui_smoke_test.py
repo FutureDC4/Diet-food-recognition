@@ -60,9 +60,9 @@ def main() -> int:
     win.show()
 
     if not win.store.names():
-        win.store.upsert({"name": "测试用户", "age": 21, "gender": "男",
+        win.store.upsert({"name": "李明", "age": 21, "gender": "男",
                           "height_cm": 175, "weight_kg": 68, "activity_level": 2})
-    win._refresh_users("测试用户")
+    win._refresh_users("李明")
 
     image = args.image or pick_sample()
     print("样例图片:", image)
