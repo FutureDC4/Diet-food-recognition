@@ -1,0 +1,55 @@
+# =========================================================
+# YOLO11m + CBAM（改进结构，⚠ 暂不启用，等中餐数据集准备好再训练）
+#
+# 改动点：backbone 第 10 层的 C2PSA → CBAM
+#   C2PSA（Position-Spatial Attention）参数量大、偏全局位置建模；
+#   CBAM 更轻量（通道+空间双注意力），对「菜色相近、多菜同盘」更友好。
+# 其余层与官方 yolo11m 完全一致，因此可以 yolo11m.pt 做迁移学习初始化。
+#
+# 使用前提：必须先注册自定义模块
+#   import models.cbam; models.cbam.register_to_ultralytics()
+#   from ultralytics import YOLO; YOLO('models/yolo11m-cbam.yaml')
+# =========================================================
+
+nc: 9                    # 当前沿用 DidntRead 的 9 类；训练中餐数据后改成中餐类别数
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]
+  s: [0.50, 0.50, 1024]
+  m: [0.50, 1.00, 512]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]        # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]       # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]]
+  - [-1, 1, Conv, [256, 3, 2]]       # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]]
+  - [-1, 1, Conv, [512, 3, 2]]       # 5-P4/16
+  - [-1, 2, C3k2, [512, True]]
+  - [-1, 1, Conv, [1024, 3, 2]]      # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]]
+  - [-1, 1, SPPF, [1024, 5]]         # 9
+  # 10 ← 原 C2PSA[1024] 替换为 CBAM（保持通道数不变）
+  # ultralytics 不会给自定义层自动注入输入通道，也不会做 width 缩放，
+  # 所以这里必须写死 SPPF 的实际输出通道：m 缩放(width=1.0, max_channels=512) → 512
+  # 换成 n/s/l/x 缩放时，把 512 改成对应值（见 docs/模型改进详解.md）
+  - [-1, 1, CBAM, [512]]
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]        # cat backbone P4
+  - [-1, 2, C3k2, [512, False]]      # 13
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]        # cat backbone P3
+  - [-1, 2, C3k2, [256, False]]      # 16 (P3/8-small)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 13], 1, Concat, [1]]       # cat head P4
+  - [-1, 2, C3k2, [512, False]]      # 19 (P4/16-medium)
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 10], 1, Concat, [1]]       # cat head P5（第 10 层现在是 CBAM）
+  - [-1, 2, C3k2, [1024, True]]      # 22 (P5/32-large)
+
+  - [[16, 19, 22], 1, Detect, [nc]]  # Detect(P3, P4, P5)

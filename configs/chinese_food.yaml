@@ -1,0 +1,23 @@
+# 中餐食堂菜品识别数据集（12 类）
+# 源数据：D:\Work\膳食模型\数据（Roboflow: Chinese-Cafeteria-Food-Recognition v3）
+# 通过 ASCII 联接 D:/Work/datasets/chinese_food 访问，避免 Windows 中文路径在
+# dataloader / cv2.imread 上的编码问题。原始目录改名不影响本文件。
+path: D:/Work/datasets/chinese_food
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 12
+names:
+  0: carrot_eggs
+  1: chicken_nuggets
+  2: chinese_cabbage
+  3: chinese_sausage
+  4: curry
+  5: fried_chicken
+  6: fried_dumplings
+  7: fried_eggs
+  8: mung_bean_sprouts
+  9: rice
+  10: triangle_hash_brown
+  11: water_spinach

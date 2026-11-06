@@ -1,0 +1,45 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+
+# ===== 运行产物 =====
+logs/
+data/output/
+data/history.db
+data/history.db.*
+data/history.csv
+*.log
+
+# ===== 模型权重（体积大，不放仓库）=====
+*.pt
+*.pth
+*.onnx
+*.engine
+models/weights/
+
+# ===== 训练结果（162MB，不放仓库；关键图表见 docs/training_results/）=====
+runs/
+
+# ===== 原始项目副本（只读参考）=====
+_upstream/
+
+# ===== 用户隐私数据 =====
+data/users.json
+
+# ===== 数据集（体积大，用 data.yaml 说明来源即可）=====
+数据/
+数据2/
+data/raw/

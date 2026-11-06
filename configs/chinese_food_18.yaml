@@ -1,0 +1,26 @@
+# 18 类中餐菜品检测配置（由 tools/prune_classes.py 于 20261104_182915 生成）
+# 已剔除: braised_egg, braised_meat
+path: D:/Work/datasets/chinese_food
+train: train/images
+val: valid/images
+test: test/images
+nc: 18
+names:
+  0: carrot_eggs
+  1: chicken_nuggets
+  2: chinese_cabbage
+  3: chinese_sausage
+  4: curry
+  5: fried_chicken
+  6: fried_dumplings
+  7: fried_eggs
+  8: mung_bean_sprouts
+  9: rice
+  10: triangle_hash_brown
+  11: water_spinach
+  12: pumpkin
+  13: sweet_potato
+  14: fried_string_beans
+  15: fried_chicken_legs
+  16: fried_noodles
+  17: loofah

@@ -1,0 +1,37 @@
+# 20 类中餐食堂菜品检测 —— 训练配置
+# 数据：D:/Work/膳食模型/数据（经 ASCII 联接 D:/Work/datasets/chinese_food 访问）
+#   ID 0-11   Cafeteria v3 食堂餐盘（bbox）
+#   ID 12-19  s-workspace v20 网菜单菜图（polygon 已转 bbox）
+#
+# 统计（合并后）：train 2813 图 / valid 131 图 / test 78 图，共约 14382 个框
+#
+# 训练命令见 tools/train_chinese.py，或直接：
+#   python tools/train_chinese.py --model yolo11s --epochs 150 --data configs/chinese_food_20.yaml
+
+path: D:/Work/datasets/chinese_food
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 20
+names:
+  0: carrot_eggs
+  1: chicken_nuggets
+  2: chinese_cabbage
+  3: chinese_sausage
+  4: curry
+  5: fried_chicken
+  6: fried_dumplings
+  7: fried_eggs
+  8: mung_bean_sprouts
+  9: rice
+  10: triangle_hash_brown
+  11: water_spinach
+  12: pumpkin
+  13: sweet_potato
+  14: fried_string_beans
+  15: braised_egg
+  16: braised_meat
+  17: fried_chicken_legs
+  18: fried_noodles
+  19: loofah

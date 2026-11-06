@@ -1,0 +1,45 @@
+# =========================================================
+# 食物密度表（g/cm³）
+# 用途：体积(cm³) × 密度 = 重量(g)
+# 当前模型是 COCO-80，能命中的食物类别见 food_reference.yaml；
+# 中餐类别后续训练模型时直接使用（key 与 class names 一致）
+# =========================================================
+
+# ---- COCO 食物类别（当前模型可用）----
+apple: 0.61
+banana: 0.94
+broccoli: 0.65
+orange: 0.94
+carrot: 0.64
+sandwich: 0.60
+hot_dog: 0.85
+pizza: 0.70
+donut: 0.45
+cake: 0.57
+
+# ---- 原仓库 9 类（换 9 类食物模型后可用）----
+chicken: 1.05
+rice: 0.85
+pasta: 0.85
+egg: 1.03
+cheese: 1.11
+
+# ---- 常见中餐 15-20 种（后续训练中餐模型时用）----
+rice_cooked: 0.85        # 米饭
+noodles: 0.80            # 面条
+mantou: 0.40             # 馒头（蓬松）
+hongshaorou: 1.05        # 红烧肉
+tangculiji: 1.00         # 糖醋里脊
+gongbaojiding: 0.95      # 宫保鸡丁
+huiguorou: 0.95          # 回锅肉
+yuxiangrousi: 0.90       # 鱼香肉丝
+qingshaoshucai: 0.50     # 清炒时蔬
+disanxian: 0.70          # 地三鲜
+mapodoufu: 1.00          # 麻婆豆腐
+ganbiandoujiao: 0.60     # 干煸豆角
+fanqiedantang: 1.00      # 番茄蛋汤
+chaodan: 0.85            # 炒蛋
+liangbancai: 0.45        # 凉拌菜
+
+# 兜底
+default: 0.80

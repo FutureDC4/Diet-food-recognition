@@ -1,0 +1,530 @@
+# =========================================================
+# 食物营养参考表（含微量元素 + 烹调方式）
+#
+# 数据来源：
+#   1. 《中国食物成分表》标准版 第 6 版（杨月欣 主编，北京大学医学出版社）
+#      —— 基础能量与三大营养素、矿物质、维生素
+#   2. USDA FoodData Central (SR Legacy / FDC 2023)
+#      —— 西式与油炸类食物的对照值
+#   3. 《中国居民膳食指南（2022）》与《中国居民膳食营养素参考摄入量（2023 版）》
+#      —— 用于判断「该加什么」的方向，不作为单餐定量依据
+#
+# 重要说明：
+#   * 全部数值为「每 100 g 可食部」的**成品典型值**，已按中式食堂/家常做法折算烹调用油；
+#     同一道菜因用油量、勾芡、含汤量不同，实际可有 ±20% 波动；
+#   * 本表用途是「估算 + 趋势判断」，不是医学营养处方；
+#   * key 必须与训练时 data.yaml 的 class names 完全一致，缺一类就会漏检该类
+#     （config.detection.filter_unknown_food = true 时本表同时是检测白名单）。
+#
+# 字段：
+#   density            密度 g/cm³（体积 → 重量）
+#   calories_per_100g  热量 kcal
+#   protein_g / fat_g / carb_g / fiber_g   三大营养素 + 膳食纤维（g）
+#   sodium_mg          钠 mg（含烹调盐，是判断「咸不咸」的关键）
+#   category           膳食类别：主食 / 蔬菜 / 荤菜 / 油炸 / 加工肉 / 汤
+#   cooking            烹调方式：蒸 / 煮 / 清炒 / 红烧 / 油炸 / 煎 / 干煸
+#   inflammation       促炎倾向：低 / 中 / 高（依据烹调方式与加工度，非临床指标）
+#   micro              微量元素（每 100 g）
+#   note               一句话要点，用于生成建议时引用
+# =========================================================
+
+_meta:
+  source: 中国食物成分表第6版 + USDA FDC + 中国居民膳食指南2022
+  unit: per_100g_edible
+  version: "2026-11"
+
+# ---- 中餐 18 类（主模型 chinese_food.pt 的类别）----
+
+rice:
+  name_cn: 白米饭
+  density: 0.85
+  calories_per_100g: 116
+  protein_g: 2.6
+  fat_g: 0.3
+  carb_g: 25.9
+  fiber_g: 0.3
+  sodium_mg: 2
+  category: 主食
+  cooking: 蒸
+  inflammation: 低
+  micro: {calcium_mg: 7, iron_mg: 0.3, zinc_mg: 0.9, selenium_ug: 2.3, potassium_mg: 30,
+          magnesium_mg: 15, vitamin_a_ug: 0, vitamin_b1_mg: 0.02, vitamin_b2_mg: 0.03,
+          vitamin_c_mg: 0, vitamin_e_mg: 0.2}
+  note: 精白米在碾磨中损失了大部分 B 族维生素与膳食纤维，升糖指数约 83（高 GI）
+
+chinese_cabbage:
+  name_cn: 炒白菜
+  density: 0.55
+  calories_per_100g: 55
+  protein_g: 1.5
+  fat_g: 3.2
+  carb_g: 3.5
+  fiber_g: 0.8
+  sodium_mg: 250
+  category: 蔬菜
+  cooking: 清炒
+  inflammation: 低
+  micro: {calcium_mg: 50, iron_mg: 0.7, zinc_mg: 0.4, selenium_ug: 0.5, potassium_mg: 130,
+          magnesium_mg: 11, vitamin_a_ug: 20, vitamin_b1_mg: 0.02, vitamin_b2_mg: 0.05,
+          vitamin_c_mg: 20, vitamin_e_mg: 0.9}
+  note: 十字花科蔬菜，含硫代葡萄糖苷；维生素 C 怕久炒，急火快炒保留率更高
+
+water_spinach:
+  name_cn: 炒空心菜
+  density: 0.40
+  calories_per_100g: 55
+  protein_g: 2.2
+  fat_g: 3.0
+  carb_g: 3.0
+  fiber_g: 1.4
+  sodium_mg: 280
+  category: 蔬菜
+  cooking: 清炒
+  inflammation: 低
+  micro: {calcium_mg: 99, iron_mg: 2.3, zinc_mg: 0.4, selenium_ug: 0.6, potassium_mg: 243,
+          magnesium_mg: 29, vitamin_a_ug: 253, vitamin_b1_mg: 0.03, vitamin_b2_mg: 0.08,
+          vitamin_c_mg: 25, vitamin_e_mg: 1.1}
+  note: 钙（99mg/100g）与胡萝卜素在绿叶菜中偏高，但草酸会影响钙吸收
+
+mung_bean_sprouts:
+  name_cn: 炒绿豆芽
+  density: 0.45
+  calories_per_100g: 55
+  protein_g: 2.1
+  fat_g: 2.8
+  carb_g: 4.0
+  fiber_g: 0.8
+  sodium_mg: 220
+  category: 蔬菜
+  cooking: 清炒
+  inflammation: 低
+  micro: {calcium_mg: 9, iron_mg: 0.6, zinc_mg: 0.4, selenium_ug: 0.5, potassium_mg: 68,
+          magnesium_mg: 18, vitamin_a_ug: 3, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.06,
+          vitamin_c_mg: 6, vitamin_e_mg: 0.4}
+  note: 发芽过程使维生素 C 与 B 族明显升高；热量低但吸油，实际热量主要在油里
+
+carrot_eggs:
+  name_cn: 胡萝卜炒蛋
+  density: 0.80
+  calories_per_100g: 118
+  protein_g: 6.5
+  fat_g: 8.0
+  carb_g: 4.5
+  fiber_g: 0.8
+  sodium_mg: 300
+  category: 荤菜
+  cooking: 清炒
+  inflammation: 低
+  micro: {calcium_mg: 40, iron_mg: 1.3, zinc_mg: 0.7, selenium_ug: 8.0, potassium_mg: 150,
+          magnesium_mg: 12, vitamin_a_ug: 350, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.15,
+          vitamin_c_mg: 3, vitamin_e_mg: 1.5}
+  note: 胡萝卜素是脂溶性的，与鸡蛋同炒吸收率显著提高；一个鸡蛋约提供 6g 优质蛋白
+
+fried_eggs:
+  name_cn: 炒蛋/煎蛋
+  density: 0.90
+  calories_per_100g: 180
+  protein_g: 12.0
+  fat_g: 13.5
+  carb_g: 1.5
+  fiber_g: 0.0
+  sodium_mg: 350
+  category: 荤菜
+  cooking: 煎
+  inflammation: 中
+  micro: {calcium_mg: 55, iron_mg: 1.8, zinc_mg: 1.1, selenium_ug: 14.0, potassium_mg: 120,
+          magnesium_mg: 10, vitamin_a_ug: 140, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.30,
+          vitamin_c_mg: 0, vitamin_e_mg: 2.0}
+  note: 优质蛋白生物价接近 100，蛋黄富含卵磷脂与叶黄素；煎制会额外吸油
+
+chinese_sausage:
+  name_cn: 腊肠/香肠
+  density: 1.05
+  calories_per_100g: 400
+  protein_g: 18.0
+  fat_g: 33.0
+  carb_g: 4.0
+  fiber_g: 0.0
+  sodium_mg: 1200
+  category: 加工肉
+  cooking: 蒸
+  inflammation: 高
+  micro: {calcium_mg: 20, iron_mg: 2.0, zinc_mg: 2.2, selenium_ug: 12.0, potassium_mg: 250,
+          magnesium_mg: 15, vitamin_a_ug: 0, vitamin_b1_mg: 0.40, vitamin_b2_mg: 0.15,
+          vitamin_c_mg: 0, vitamin_e_mg: 0.3}
+  note: 加工肉制品，钠约 1200mg/100g（一份 80g 已占全天盐上限近一半）；WHO/IARC 列为 1 类致癌物
+  risk: 加工肉
+
+chicken_nuggets:
+  name_cn: 鸡米花
+  density: 0.70
+  calories_per_100g: 250
+  protein_g: 15.0
+  fat_g: 13.0
+  carb_g: 18.0
+  fiber_g: 0.8
+  sodium_mg: 600
+  category: 油炸
+  cooking: 油炸
+  inflammation: 高
+  micro: {calcium_mg: 25, iron_mg: 0.9, zinc_mg: 0.9, selenium_ug: 12.0, potassium_mg: 220,
+          magnesium_mg: 18, vitamin_a_ug: 10, vitamin_b1_mg: 0.10, vitamin_b2_mg: 0.10,
+          vitamin_c_mg: 0, vitamin_e_mg: 2.5}
+  note: 裹粉油炸，吸油率高；高温油炸产生丙烯酰胺与晚期糖基化终产物（AGEs），促炎
+  risk: 油炸
+
+fried_chicken:
+  name_cn: 炸鸡排
+  density: 0.70
+  calories_per_100g: 280
+  protein_g: 19.0
+  fat_g: 16.0
+  carb_g: 13.0
+  fiber_g: 0.6
+  sodium_mg: 700
+  category: 油炸
+  cooking: 油炸
+  inflammation: 高
+  micro: {calcium_mg: 22, iron_mg: 1.0, zinc_mg: 1.2, selenium_ug: 16.0, potassium_mg: 260,
+          magnesium_mg: 22, vitamin_a_ug: 15, vitamin_b1_mg: 0.12, vitamin_b2_mg: 0.12,
+          vitamin_c_mg: 0, vitamin_e_mg: 3.0}
+  note: 蛋白质质量好，但裹粉油炸使脂肪供能比超过 50%；一份 150g 约 420kcal
+  risk: 油炸
+
+fried_chicken_legs:
+  name_cn: 炸鸡腿
+  density: 0.75
+  calories_per_100g: 240
+  protein_g: 17.0
+  fat_g: 15.0
+  carb_g: 8.0
+  fiber_g: 0.3
+  sodium_mg: 620
+  category: 油炸
+  cooking: 油炸
+  inflammation: 高
+  micro: {calcium_mg: 18, iron_mg: 1.1, zinc_mg: 1.5, selenium_ug: 15.0, potassium_mg: 240,
+          magnesium_mg: 20, vitamin_a_ug: 20, vitamin_b1_mg: 0.10, vitamin_b2_mg: 0.14,
+          vitamin_c_mg: 0, vitamin_e_mg: 2.6}
+  note: 带骨计量，可食部约 70%；鸡腿肉铁锌含量高于鸡胸
+  risk: 油炸
+
+fried_dumplings:
+  name_cn: 煎饺/锅贴
+  density: 0.85
+  calories_per_100g: 240
+  protein_g: 9.0
+  fat_g: 9.0
+  carb_g: 30.0
+  fiber_g: 1.2
+  sodium_mg: 550
+  category: 主食
+  cooking: 煎
+  inflammation: 中
+  micro: {calcium_mg: 25, iron_mg: 1.2, zinc_mg: 0.8, selenium_ug: 8.0, potassium_mg: 150,
+          magnesium_mg: 16, vitamin_a_ug: 10, vitamin_b1_mg: 0.12, vitamin_b2_mg: 0.10,
+          vitamin_c_mg: 2, vitamin_e_mg: 1.2}
+  note: 面皮 + 肉馅，本身是「主食+蛋白」复合体；煎制比水煮多约 30% 热量
+
+fried_noodles:
+  name_cn: 炒面
+  density: 0.70
+  calories_per_100g: 200
+  protein_g: 6.0
+  fat_g: 7.5
+  carb_g: 26.0
+  fiber_g: 1.2
+  sodium_mg: 500
+  category: 主食
+  cooking: 炒
+  inflammation: 中
+  micro: {calcium_mg: 20, iron_mg: 1.0, zinc_mg: 0.7, selenium_ug: 6.0, potassium_mg: 120,
+          magnesium_mg: 18, vitamin_a_ug: 8, vitamin_b1_mg: 0.10, vitamin_b2_mg: 0.06,
+          vitamin_c_mg: 2, vitamin_e_mg: 1.4}
+  note: 一份炒面常达 300-400g，热量 600-800kcal 且蔬菜极少；面条本身蛋白质质量一般
+
+fried_string_beans:
+  name_cn: 干煸豆角
+  density: 0.55
+  calories_per_100g: 105
+  protein_g: 2.5
+  fat_g: 7.0
+  carb_g: 8.0
+  fiber_g: 2.1
+  sodium_mg: 400
+  category: 蔬菜
+  cooking: 干煸
+  inflammation: 中
+  micro: {calcium_mg: 42, iron_mg: 1.0, zinc_mg: 0.4, selenium_ug: 0.6, potassium_mg: 200,
+          magnesium_mg: 30, vitamin_a_ug: 35, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.08,
+          vitamin_c_mg: 6, vitamin_e_mg: 1.8}
+  note: 豆角纤维含量在蔬菜中偏高（2.1g/100g），但干煸用油多；务必彻底熟透以免皂苷中毒
+
+triangle_hash_brown:
+  name_cn: 三角薯饼
+  density: 0.70
+  calories_per_100g: 290
+  protein_g: 2.8
+  fat_g: 16.0
+  carb_g: 33.0
+  fiber_g: 2.4
+  sodium_mg: 400
+  category: 油炸
+  cooking: 油炸
+  inflammation: 高
+  micro: {calcium_mg: 12, iron_mg: 0.8, zinc_mg: 0.4, selenium_ug: 1.0, potassium_mg: 480,
+          magnesium_mg: 25, vitamin_a_ug: 0, vitamin_b1_mg: 0.10, vitamin_b2_mg: 0.03,
+          vitamin_c_mg: 8, vitamin_e_mg: 2.0}
+  note: 钾含量高（480mg/100g），但油炸淀粉类同时带来高热量与丙烯酰胺
+  risk: 油炸
+
+curry:
+  name_cn: 咖喱（含土豆/肉）
+  density: 1.00
+  calories_per_100g: 130
+  protein_g: 6.0
+  fat_g: 6.5
+  carb_g: 12.0
+  fiber_g: 1.4
+  sodium_mg: 480
+  category: 荤菜
+  cooking: 炖
+  inflammation: 低
+  micro: {calcium_mg: 20, iron_mg: 1.0, zinc_mg: 0.9, selenium_ug: 5.0, potassium_mg: 250,
+          magnesium_mg: 18, vitamin_a_ug: 60, vitamin_b1_mg: 0.08, vitamin_b2_mg: 0.06,
+          vitamin_c_mg: 8, vitamin_e_mg: 1.2}
+  note: 姜黄素具抗炎潜力，是油炸菜之外较好的荤菜选择；土豆计入主食
+
+loofah:
+  name_cn: 丝瓜
+  density: 0.55
+  calories_per_100g: 25
+  protein_g: 1.0
+  fat_g: 0.3
+  carb_g: 4.0
+  fiber_g: 0.6
+  sodium_mg: 5
+  category: 蔬菜
+  cooking: 清炒
+  inflammation: 低
+  micro: {calcium_mg: 14, iron_mg: 0.4, zinc_mg: 0.2, selenium_ug: 0.2, potassium_mg: 115,
+          magnesium_mg: 11, vitamin_a_ug: 15, vitamin_b1_mg: 0.02, vitamin_b2_mg: 0.02,
+          vitamin_c_mg: 5, vitamin_e_mg: 0.2}
+  note: 水分占 94%，热量极低，适合增加饱腹体积
+
+pumpkin:
+  name_cn: 蒸南瓜
+  density: 0.65
+  calories_per_100g: 26
+  protein_g: 0.7
+  fat_g: 0.1
+  carb_g: 5.3
+  fiber_g: 0.8
+  sodium_mg: 1
+  category: 蔬菜
+  cooking: 蒸
+  inflammation: 低
+  micro: {calcium_mg: 16, iron_mg: 0.4, zinc_mg: 0.14, selenium_ug: 0.5, potassium_mg: 145,
+          magnesium_mg: 8, vitamin_a_ug: 148, vitamin_b1_mg: 0.03, vitamin_b2_mg: 0.04,
+          vitamin_c_mg: 8, vitamin_e_mg: 0.4}
+  note: 胡萝卜素（148μgRAE/100g）丰富，蒸制几乎不加油，是很好的深色蔬菜来源
+
+sweet_potato:
+  name_cn: 蒸红薯
+  density: 0.90
+  calories_per_100g: 90
+  protein_g: 1.4
+  fat_g: 0.2
+  carb_g: 20.7
+  fiber_g: 1.6
+  sodium_mg: 28
+  category: 主食
+  cooking: 蒸
+  inflammation: 低
+  micro: {calcium_mg: 23, iron_mg: 0.5, zinc_mg: 0.15, selenium_ug: 0.5, potassium_mg: 130,
+          magnesium_mg: 12, vitamin_a_ug: 125, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.04,
+          vitamin_c_mg: 24, vitamin_e_mg: 0.3}
+  note: 膳食指南推荐用薯类替代部分精白米面；蒸红薯 GI 约 63，低于白米饭
+
+# ---- 常见中餐参考项（模型扩容 / 手工检索时可命中，不影响当前 18 类）----
+
+qingshaoshucai:
+  name_cn: 清炒时蔬
+  density: 0.50
+  calories_per_100g: 60
+  protein_g: 2.0
+  fat_g: 3.5
+  carb_g: 4.5
+  fiber_g: 1.5
+  sodium_mg: 260
+  category: 蔬菜
+  cooking: 清炒
+  inflammation: 低
+  micro: {calcium_mg: 80, iron_mg: 1.5, zinc_mg: 0.4, selenium_ug: 0.6, potassium_mg: 220,
+          magnesium_mg: 25, vitamin_a_ug: 300, vitamin_b1_mg: 0.04, vitamin_b2_mg: 0.08,
+          vitamin_c_mg: 30, vitamin_e_mg: 1.0}
+  note: 深色蔬菜应占每日蔬菜的一半以上
+
+mapodoufu:
+  name_cn: 麻婆豆腐
+  density: 1.00
+  calories_per_100g: 130
+  protein_g: 9.0
+  fat_g: 8.5
+  carb_g: 4.0
+  fiber_g: 0.5
+  sodium_mg: 560
+  category: 荤菜
+  cooking: 烧
+  inflammation: 中
+  micro: {calcium_mg: 130, iron_mg: 1.9, zinc_mg: 0.8, selenium_ug: 4.0, potassium_mg: 140,
+          magnesium_mg: 40, vitamin_a_ug: 10, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.04,
+          vitamin_c_mg: 1, vitamin_e_mg: 1.6}
+  note: 大豆制品，钙（130mg/100g）与镁丰富，是植物蛋白的优质来源
+
+liangbancai:
+  name_cn: 凉拌菜
+  density: 0.45
+  calories_per_100g: 80
+  protein_g: 2.0
+  fat_g: 5.0
+  carb_g: 6.0
+  fiber_g: 1.8
+  sodium_mg: 400
+  category: 蔬菜
+  cooking: 凉拌
+  inflammation: 低
+  micro: {calcium_mg: 60, iron_mg: 1.2, zinc_mg: 0.4, selenium_ug: 0.5, potassium_mg: 200,
+          magnesium_mg: 22, vitamin_a_ug: 180, vitamin_b1_mg: 0.04, vitamin_b2_mg: 0.06,
+          vitamin_c_mg: 22, vitamin_e_mg: 0.9}
+  note: 凉拌几乎不破坏维生素 C，但酱油与红油会带来较多钠
+
+# ---- 奶/蛋/水果：作为「该加什么」的补充项，界面可直接引用 ----
+milk:
+  name_cn: 牛奶
+  density: 1.03
+  calories_per_100g: 54
+  protein_g: 3.0
+  fat_g: 3.2
+  carb_g: 3.4
+  fiber_g: 0.0
+  sodium_mg: 37
+  category: 奶类
+  cooking: 无
+  inflammation: 低
+  micro: {calcium_mg: 104, iron_mg: 0.3, zinc_mg: 0.42, selenium_ug: 1.9, potassium_mg: 109,
+          magnesium_mg: 11, vitamin_a_ug: 24, vitamin_b1_mg: 0.03, vitamin_b2_mg: 0.14,
+          vitamin_c_mg: 1, vitamin_e_mg: 0.21}
+  note: 300ml 牛奶约提供 310mg 钙，占成人每日推荐量的近 40%
+
+yogurt:
+  name_cn: 无糖酸奶
+  density: 1.03
+  calories_per_100g: 62
+  protein_g: 3.5
+  fat_g: 3.0
+  carb_g: 5.0
+  fiber_g: 0.0
+  sodium_mg: 45
+  category: 奶类
+  cooking: 无
+  inflammation: 低
+  micro: {calcium_mg: 118, iron_mg: 0.4, zinc_mg: 0.5, selenium_ug: 2.0, potassium_mg: 150,
+          magnesium_mg: 12, vitamin_a_ug: 20, vitamin_b1_mg: 0.03, vitamin_b2_mg: 0.15,
+          vitamin_c_mg: 1, vitamin_e_mg: 0.2}
+  note: 发酵乳糖更易消化，含益生菌；注意「风味酸奶」含糖可达 10g/100g
+
+boiled_egg:
+  name_cn: 水煮蛋
+  density: 1.03
+  calories_per_100g: 144
+  protein_g: 13.3
+  fat_g: 8.8
+  carb_g: 2.8
+  fiber_g: 0.0
+  sodium_mg: 131
+  category: 蛋类
+  cooking: 煮
+  inflammation: 低
+  micro: {calcium_mg: 56, iron_mg: 2.0, zinc_mg: 1.1, selenium_ug: 14.3, potassium_mg: 154,
+          magnesium_mg: 10, vitamin_a_ug: 234, vitamin_b1_mg: 0.11, vitamin_b2_mg: 0.27,
+          vitamin_c_mg: 0, vitamin_e_mg: 1.84}
+  note: 一个约 50g，提供 6.5g 完整蛋白；膳食指南建议每天 1 个蛋，蛋黄不必丢弃
+
+apple:
+  name_cn: 苹果
+  density: 0.61
+  calories_per_100g: 52
+  protein_g: 0.3
+  fat_g: 0.2
+  carb_g: 13.5
+  fiber_g: 2.4
+  sodium_mg: 1
+  category: 水果
+  cooking: 无
+  inflammation: 低
+  micro: {calcium_mg: 4, iron_mg: 0.2, zinc_mg: 0.05, selenium_ug: 0.1, potassium_mg: 119,
+          magnesium_mg: 4, vitamin_a_ug: 3, vitamin_b1_mg: 0.02, vitamin_b2_mg: 0.02,
+          vitamin_c_mg: 4, vitamin_e_mg: 0.2}
+  note: 果胶（可溶性纤维）含量高，带皮吃纤维更完整
+
+orange:
+  name_cn: 橙子
+  density: 0.94
+  calories_per_100g: 47
+  protein_g: 0.8
+  fat_g: 0.2
+  carb_g: 11.1
+  fiber_g: 2.4
+  sodium_mg: 1
+  category: 水果
+  cooking: 无
+  inflammation: 低
+  micro: {calcium_mg: 20, iron_mg: 0.4, zinc_mg: 0.14, selenium_ug: 0.3, potassium_mg: 159,
+          magnesium_mg: 14, vitamin_a_ug: 14, vitamin_b1_mg: 0.05, vitamin_b2_mg: 0.04,
+          vitamin_c_mg: 33, vitamin_e_mg: 0.56}
+  note: 一个中等橙子约 200g，可提供 60mg 以上维生素 C
+
+banana:
+  name_cn: 香蕉
+  density: 0.94
+  calories_per_100g: 93
+  protein_g: 1.4
+  fat_g: 0.2
+  carb_g: 22.0
+  fiber_g: 1.2
+  sodium_mg: 1
+  category: 水果
+  cooking: 无
+  inflammation: 低
+  micro: {calcium_mg: 7, iron_mg: 0.4, zinc_mg: 0.18, selenium_ug: 0.6, potassium_mg: 256,
+          magnesium_mg: 43, vitamin_a_ug: 5, vitamin_b1_mg: 0.03, vitamin_b2_mg: 0.07,
+          vitamin_c_mg: 8, vitamin_e_mg: 0.24}
+  note: 钾（256mg/100g）与镁丰富，适合作为运动后加餐
+
+# ---- COCO / 旧模型兼容项（旧模型 yolo11m.pt 时代，保留以便回退）----
+broccoli:   {name_cn: 西兰花, density: 0.65, calories_per_100g: 36, protein_g: 4.1, fat_g: 0.6, carb_g: 4.3, fiber_g: 2.6, sodium_mg: 19, category: 蔬菜, cooking: 蒸, inflammation: 低}
+carrot:     {name_cn: 胡萝卜, density: 0.64, calories_per_100g: 41, protein_g: 1.0, fat_g: 0.2, carb_g: 8.8, fiber_g: 2.8, sodium_mg: 71, category: 蔬菜, cooking: 生, inflammation: 低}
+sandwich:   {name_cn: 三明治, density: 0.60, calories_per_100g: 250, protein_g: 11.0, fat_g: 10.0, carb_g: 28.0, fiber_g: 1.8, sodium_mg: 600, category: 主食, cooking: 无, inflammation: 中}
+hot_dog:    {name_cn: 热狗,   density: 0.85, calories_per_100g: 290, protein_g: 10.0, fat_g: 17.0, carb_g: 24.0, fiber_g: 1.2, sodium_mg: 800, category: 加工肉, cooking: 无, inflammation: 高, risk: 加工肉}
+pizza:      {name_cn: 披萨,   density: 0.70, calories_per_100g: 266, protein_g: 11.0, fat_g: 10.0, carb_g: 33.0, fiber_g: 2.3, sodium_mg: 598, category: 主食, cooking: 烤, inflammation: 中}
+donut:      {name_cn: 甜甜圈, density: 0.45, calories_per_100g: 421, protein_g: 5.0, fat_g: 22.0, carb_g: 51.0, fiber_g: 1.5, sodium_mg: 350, category: 油炸, cooking: 油炸, inflammation: 高, risk: 油炸}
+cake:       {name_cn: 蛋糕,   density: 0.57, calories_per_100g: 390, protein_g: 5.0, fat_g: 20.0, carb_g: 50.0, fiber_g: 0.8, sodium_mg: 300, category: 甜点, cooking: 烤, inflammation: 中}
+chicken:    {name_cn: 鸡肉,   density: 1.05, calories_per_100g: 165, protein_g: 25.0, fat_g: 7.0, carb_g: 0.0, fiber_g: 0.0, sodium_mg: 70, category: 荤菜, cooking: 煮, inflammation: 低}
+pasta:      {name_cn: 意面,   density: 0.85, calories_per_100g: 158, protein_g: 5.8, fat_g: 0.9, carb_g: 31.0, fiber_g: 1.8, sodium_mg: 5, category: 主食, cooking: 煮, inflammation: 低}
+egg:        {name_cn: 鸡蛋,   density: 1.03, calories_per_100g: 155, protein_g: 13.0, fat_g: 11.0, carb_g: 1.1, fiber_g: 0.0, sodium_mg: 131, category: 蛋类, cooking: 煮, inflammation: 低}
+cheese:     {name_cn: 奶酪,   density: 1.11, calories_per_100g: 402, protein_g: 25.0, fat_g: 33.0, carb_g: 1.3, fiber_g: 0.0, sodium_mg: 621, category: 奶类, cooking: 无, inflammation: 低}
+
+# ---- 兜底默认值（食物不在表中时使用）----
+default:
+  name_cn: 未知食物
+  density: 0.80
+  calories_per_100g: 200
+  protein_g: 8.0
+  fat_g: 8.0
+  carb_g: 24.0
+  fiber_g: 1.0
+  sodium_mg: 300
+  category: 荤菜
+  cooking: 未知
+  inflammation: 中

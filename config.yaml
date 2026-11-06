@@ -1,0 +1,202 @@
+# =========================================================
+# 膳食识别系统 —— 全局配置
+# 说明：所有路径均相对于项目根目录（D:\Work\膳食模型\膳食模型x）
+# =========================================================
+
+project:
+  name: 膳食识别系统
+  version: 1.0.0
+  language: zh
+
+paths:
+  weights_dir: models/weights
+  plate_model: models/weights/yolo11m-obb-plate.pt
+  # 部署权重：方案C（Neck 端 P3/P4 后加 CBAM + WIoU v3），18 类。
+  # 与基线 models/weights/chinese_food.pt（yolo11s + CIoU）同数据同超参，
+  # test 16 图实测：菜品级命中 86.0% vs 基线 66.7%。换回基线只改这一行。
+  food_model: models/weights/chinese_food_cbam_neck.pt
+  food_reference: data/food_reference.yaml
+  density_table: data/density_table.yaml
+  reference_sizes: data/reference_sizes.yaml
+  db_path: data/history.db
+  log_dir: logs
+  output_dir: data/output
+
+# ---------------- 检测 ----------------
+detection:
+  imgsz: 640
+  conf_threshold: 0.25          # 食物检测置信度阈值
+  iou_threshold: 0.45
+  plate_conf_threshold: 0.25    # 盘子/餐具 OBB 置信度阈值
+  device: cuda:0                # RTX 4060 Laptop 8G；若切回集显模式会自动回退 cpu
+  max_det: 30
+  half: true                    # cuda 下用 fp16 推理，约快 1.5-2x（cpu 会自动忽略）
+  # 白名单过滤：只保留 data/food_reference.yaml 里存在的类别
+  # （当前 yolo11m.pt 是 COCO-80，会输出 person/chair 等，必须过滤）
+  filter_unknown_food: true
+
+# ---------------- 分割（可选，默认关闭）----------------
+# 启用后对每个食物框跑 SAM，用掩膜像素数代替 bbox 面积，重量估计更准
+segmentation:
+  enabled: false
+  sam_checkpoint: ../food_calories/sam_vit_h_4b8939.pth   # 2.4GB，相对项目根目录
+  sam_model_type: vit_h
+  device: cuda:0                # GPU 下 vit_h 约 0.3-0.5 秒/图（CPU 需 3-8 秒）
+  mask_fill_factor: 0.95        # 掩膜面积的微调系数（1.0 = 直接用）
+
+# ---------------- 盘子 / 尺度 ----------------
+plate:
+  standard_diameter_cm: 25.0    # 标准盘直径（参考物缺失时的保底假设）
+  expand_ratio: 1.10            # 盘子 OBB 外扩比例（圈住盘边食物）
+  crop_shrink_ratio: 0.95       # 食物检测裁剪时盘子 OBB 的收缩比例
+  # 是否先把盘子摆正裁出来再检测食物。
+  # 实测（25 张 test 图，方案C）：裁剪 召回 51.4% / 精确 60.3%，全图 77.0% / 82.6%。
+  # 旋转后的裁剪图会让模型给出更大的框，且盘外食物被切掉；训练与评估都是全图，
+  # 所以默认关闭，盘子只用来换算像素/厘米尺度。
+  crop_for_detection: false
+  fallback_image_width_cm: 40.0 # 完全没有参考物时，假设画面宽度约 40cm（精度差，会告警）
+
+# 参考物真实尺寸（cm）——与 data/reference_sizes.yaml 保持一致，运行时以 yaml 为准
+reference_sizes:
+  Fork: 18.5
+  Knife: 21.0
+  Spoon: 17.0
+  Plate: 25.0
+
+# ---------------- 重量估计 ----------------
+weight_estimation:
+  default_height_cm: 3.0        # 默认食物堆叠高度
+  area_fill_factor: 0.80        # bbox 是外接矩形，实际食物占内部比例（经验折算）
+  min_weight_g: 10.0            # 单项重量下限（过滤误检）
+  max_weight_g: 1500.0          # 单项重量上限（全局兜底）
+  max_plate_fill_ratio: 0.85    # 所有食物面积之和 ≤ 盘子面积 × 该系数（物理约束）
+  # 米饭「占食物面积 1/3」规则算出的重量上限（g）。
+  # 因为其他菜的标注框偏大，推导出的米饭面积会跟着放大，不加限制会算出 400g+ 一碗饭。
+  # 食堂一勺饭约 180-200g，大份约 250g；设为 0 表示不限制。
+  rice_rule_max_g: 250  # 单份上限（g）：防止误检/大框把一份食物算成 1kg+
+  max_weight_by_food:
+    # 中餐食堂 12 类（一格菜的分量上限）
+    carrot_eggs: 300
+    chicken_nuggets: 300
+    chinese_cabbage: 300
+    chinese_sausage: 200
+    curry: 400
+    fried_chicken: 350
+    fried_dumplings: 350
+    fried_eggs: 200
+    mung_bean_sprouts: 300
+    rice: 400
+    triangle_hash_brown: 250
+    water_spinach: 300
+    # 中餐扩充 8 类（一格菜的分量上限）
+    braised_meat: 250
+    braised_egg: 150
+    fried_chicken_legs: 250
+    fried_noodles: 500
+    fried_string_beans: 300
+    loofah: 400
+    pumpkin: 300
+    sweet_potato: 400
+    # COCO / 旧模型
+    apple: 400
+    banana: 250
+    orange: 400
+    carrot: 250
+    broccoli: 400
+    sandwich: 350
+    hot_dog: 250
+    pizza: 600
+    donut: 150
+    cake: 300
+    chicken: 500
+    pasta: 600
+    egg: 120
+    cheese: 300
+  # 不同食物的默认堆叠高度（cm），未列出的用 default_height_cm
+  height_by_food:
+    # 中餐食堂 12 类：一格菜的堆叠厚度
+    carrot_eggs: 2.2
+    chicken_nuggets: 2.5
+    chinese_cabbage: 2.5
+    chinese_sausage: 1.5
+    curry: 3.0
+    fried_chicken: 2.5
+    fried_dumplings: 2.5
+    fried_eggs: 2.0
+    mung_bean_sprouts: 2.5
+    rice: 3.5
+    triangle_hash_brown: 1.5
+    water_spinach: 2.5
+    # 中餐扩充 8 类
+    braised_meat: 2.2
+    braised_egg: 3.0
+    fried_chicken_legs: 3.0
+    fried_noodles: 3.0
+    fried_string_beans: 2.5
+    loofah: 2.5
+    pumpkin: 2.5
+    sweet_potato: 4.0
+    # COCO / 旧模型
+    pasta: 3.0
+    chicken: 2.5
+    apple: 6.0
+    banana: 3.0
+    broccoli: 3.0
+    egg: 2.0
+    cheese: 2.0
+    cake: 6.0
+    default: 3.0
+
+# ---------------- 米饭三级处理 ----------------
+# 米饭在中餐里最容易被菜压住，检测框会明显偏小。按
+#   「米饭框面积 / 全部食物面积」分三级处理：
+#     一级  ≥ trust_ratio        框够大，直接用检测值
+#     二级  reject_ratio ~ trust  被遮挡，按「占食物总面积 target_ratio」反推
+#     三级  < reject_ratio       正常人不会只打这么一点饭，判为误检丢弃
+rice_rule:
+  enabled: true
+  trust_ratio: 0.20
+  target_ratio: 0.3333
+  reject_ratio: 0.04
+
+# ---------------- 食物高度档位 ----------------
+# 单张照片无法判断堆得多高，由用户在界面上选，系数乘在按食物类型查到的默认高度上
+height_levels:
+  薄摊: 0.75    # 平盘摊开、汤菜、凉拌
+  常规: 1.00    # 食堂一格菜的正常高度（默认）
+  堆高: 1.35    # 大份、堆起来的一盘
+
+# ---------------- 健康计算 ----------------
+health:
+  # 活动量系数（Mifflin-St Jeor 基础上的标准活动因子）
+  activity_levels:
+    1: { name: 轻度, factor: 1.375 }
+    2: { name: 中度, factor: 1.550 }
+    3: { name: 重度, factor: 1.725 }
+    4: { name: 极重, factor: 1.900 }
+
+# ---------------- Ollama ----------------
+ollama:
+  host: http://localhost:11434
+  model: qwen2.5:1.5b           # 本机已拉取的模型；建议后续换 qwen2.5:7b 效果更好
+  stream: true
+  temperature: 0.7
+  num_predict: 900
+  timeout: 180                  # 秒（本地小模型 CPU 推理较慢，给足时间）
+  # 推理设备：0 = 纯 CPU，-1 = 交给 Ollama 决定（有 GPU 就用 GPU）
+  # 当前显卡驱动 546.80 配 Ollama 0.40 会在 GPU 上报
+  #   "CUDA error: device kernel image is invalid"，因此先固定走 CPU（1.5b 模型约 2-3 秒/次）
+  # 升级 NVIDIA 驱动后改回 -1 即可启用 GPU 加速
+  num_gpu: 0
+
+# ---------------- 数据库 ----------------
+database:
+  path: data/history.db
+  enabled: true
+
+# ---------------- 日志 ----------------
+logging:
+  level: INFO
+  file: logs/app.log
+  rotation: 10 MB
+  retention: 14 days
