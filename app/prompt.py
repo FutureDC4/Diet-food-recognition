@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Sequence
 
 SYSTEM_PROMPT = (
@@ -89,16 +90,62 @@ def _verdict_lines(checks: Sequence[dict]) -> str:
 
     1.5B 的小模型很容易把「纤维 6.2g / 目标 10g」读成「基本达标」，
     所以这里单独列一份结论，并要求它照抄判断、不许改判。
+    最后一行再单独点名「不许说达标」的项目——白话短句比长段叮嘱更管用。
     """
     bad = [c for c in checks if c.get("status") != "ok"]
     if not bad:
         return "这一餐各项结构指标均达标（热量、蛋白质、纤维、蔬菜、主食、脂肪、钠、促炎负荷）。"
     mark = {"low": "偏低", "high": "偏高", "warn": "需要控制", "ok": "达标"}
-    return "\n".join(
+    lines = [
         f"- {c['label']}：{mark.get(c['status'], c['status'])}"
         f"（实际 {c['actual_text']}，参考 {c['target_text']}）"
         for c in bad
-    )
+    ]
+    low = [c["label"] for c in bad if c.get("status") == "low"]
+    if low:
+        lines.append(f"- 上面标「偏低」的是：{'、'.join(low)}。"
+                     f"这几项不许写成「达标」「充足」「偏高」。")
+    ok = [c["label"] for c in checks if c.get("status") == "ok"]
+    if ok:
+        lines.append(f"- 已经达标的是：{'、'.join(ok)}。"
+                     f"这几项不许写成「未达标」「不足」「偏低」。")
+    return "\n".join(lines)
+
+
+_OK_WORDS = ("基本达标", "达标", "充足", "偏高", "足够", "很足", "不缺")
+_BAD_WORDS = ("未达标", "不达标", "未达", "没达标", "不充足", "不足", "偏低", "太少", "不够")
+
+
+def _short_label(label: str) -> str:
+    """「本餐热量」在正文里通常写成「热量」，去掉前缀再匹配。"""
+    return str(label or "").replace("本餐", "").strip() or str(label or "").strip()
+
+
+def enforce_verdict(text: str, checks: Sequence[dict]) -> str:
+    """兜底纠正与结论清单相反的判断词。
+
+    判定本来就在 :mod:`app.diet_rules` 里算死了，prompt 也把结论清单原样给了模型，
+    但 1.5B 的小模型偶尔还是会写出「膳食纤维达标」「热量不足」这种与结论相反的话。
+    这里只换判断词、不动句子结构——与其让建议自相矛盾，不如按规则层的事实收口：
+
+    - 标为「偏低」的项目，不许说成达标/充足/偏高；
+    - 标为「达标」的项目，不许说成未达标/不足/偏低。
+    """
+    if not text or not checks:
+        return text
+    out = text
+    for c in checks:
+        status = c.get("status")
+        label = _short_label(c.get("label"))
+        if not label:
+            continue
+        if status == "low":
+            out = re.sub(rf"{re.escape(label)}\s*(?:{'|'.join(_OK_WORDS)})",
+                         f"{label}偏低", out)
+        elif status == "ok":
+            out = re.sub(rf"{re.escape(label)}\s*(?:{'|'.join(_BAD_WORDS)})",
+                         f"{label}达标", out)
+    return out
 
 
 def build_meal_prompt(
@@ -191,23 +238,31 @@ def build_meal_prompt(
 - 维生素 C 与含铁食物同食可把非血红素铁吸收率提高 2-3 倍
 - 精白米面损失 70% 以上 B 族维生素与膳食纤维，可用全谷物/薯类替代一部分
 
-【请按以下四节输出，每节 2-4 句】
-「一、这餐怎么样」：**第一句直接用下面这句总评**，一字不改：
-  「{budget.get('summary') or ''}」
-  然后**只补一句**，解释其中**最主要那一个**问题对健康的影响
-  （例如长期高钠与血压、油炸与炎症、纤维不足与肠道），
-  **不要逐项解释每一个指标**，也不要把总评里的各项再复述一遍。
-  **严禁出现与结论清单相反的判断**，例如清单说膳食纤维不足就不能说"纤维达标/偏高"。
-「二、现在补什么」：2-3 条具体建议，写清食物名 + 分量（例如"加一份 150g 的清炒油麦菜"），
-  优先补标为「偏低」的项目。
-「三、下一餐怎么安排」：结合今日累计，给下一餐 1-2 条方向性建议（不必精确到克）。
-  不要复述本餐的补充建议。
-「四、一句话提醒」：参考这句素材，用自己的话写一句：
-  「{budget.get('tip') or ''}」
-  不要说"总体均衡""继续保持"这类与结论相反的客套话。
+【一句话提醒的素材（照它的意思写，不要照抄原句）】
+{budget.get('tip') or '（无）'}
 
-严格要求：
-- 中文，总长度 350 字以内，数字带单位；
-- 不要输出代码块、不要 YAML 头、不要开场白，直接从「一、这餐怎么样」开始；
-- 不要提及"检测框""识别""系统""数据"等实现细节，也不要把米饭处理说明当成建议。
+【第一节的开头（原句，数字不许改）】
+{budget.get('summary') or '（无）'}
+
+【写作方式】
+用中文分四节写，每节 2-4 句，全文 350 字以内，数字带单位。直接开写，不要开场白、不要代码块。
+
+一、这餐怎么样
+  第一句就写上面「第一节的开头」那一句，把数值原样带过来，不要自己另写一句。
+  接着讲一个最要紧的问题会怎样影响健康——长期高钠与血压、油炸与炎症、
+  纤维不足与肠道，挑一个讲透就够，不必逐项解释，也不要把各项指标再念一遍。
+  结论清单里标为「偏低」的项目，本节不得写成「达标」「充足」或「偏高」。
+
+二、现在补什么
+  给 2-3 条当天就能执行的建议，落到食物名与克数（多少克、几份）。
+  优先处理标为「偏低」的项目。
+
+三、下一餐怎么安排
+  结合今日累计给 1-2 条方向，不必精确到克，也不要重复第二节说过的内容。
+
+四、一句话提醒
+  用你自己的话，把上面那条提醒素材的意思讲出来，
+  不要写「总体均衡」「继续保持」这类与结论不符的客套话。
+
+不要提及识别、检测框、系统、数据这些实现细节，也不要把米饭处理说明当成建议。
 """

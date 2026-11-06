@@ -39,7 +39,9 @@ from src.utils.logger import get_logger, setup_logger                # noqa: E40
 
 from .analyzer import MEAL_TYPES, MealAnalyzer                       # noqa: E402
 from .detection_rules import DEFAULT_HEIGHT_LEVEL, HEIGHT_LEVELS     # noqa: E402
-from .prompt import SYSTEM_PROMPT, build_meal_prompt                 # noqa: E402
+from .prompt import (                                                 # noqa: E402
+    SYSTEM_PROMPT, build_meal_prompt, enforce_verdict,
+)
 from .theme import MAIN_QSS                                          # noqa: E402
 from .user_store import ACTIVITY_NAMES, UserStore                    # noqa: E402
 from .widgets import StructurePanel                                  # noqa: E402
@@ -53,6 +55,77 @@ IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 _MARK_RE = re.compile(r"^[「【]?\s*([一二三四五六七八]、)\s*([^」】\s　，。：:]{2,16})(.*)$")
 _BULLET_RE = re.compile(r"^[ \t]*[•·\-*]\s+")
 
+# 小模型（1.5B）常把提示词里的写作要求当成正文抄出来，例如
+# 「第一句直接用下面这句总评：热量适中…然后只补一句，解释其中最主要那一个问题对健康的影响」。
+# 下面这些片段只可能出现在「要求」里，不可能出现在营养建议里，摘掉即可。
+_META_FRAGMENTS = (
+    r"第一句直接用(?:下面)?(?:这|那)?句?总评",
+    r"一字不改地?",
+    r"然后只补一句",
+    r"只补一句",
+    r"解释其中(?:的)?最主要(?:的)?那?一个(?:问题)?(?:对健康的影响)?",
+    r"最主要(?:的)?那?一个(?:问题)?(?:对健康的影响)?",
+    r"不要逐项解释(?:每一个指标)?",
+    r"也不要把总评里的各项再复述一遍",
+    r"严禁出现与结论清单相反的判断",
+    r"(?:不要|不得|严禁)写[「「\"“']?(?:总体均衡|继续保持)[^。！？]{0,24}",
+    r"这类[^。！？]{0,16}客套话",
+    r"参考这句素材",
+    r"用自己的话写一句",
+    r"用你自己的话",
+    r"上面[「「\"']?第一节的开头[」」\"']?那一句",
+    r"第一节的开头",
+    r"第一句就写",
+    r"把数值原样带过来",
+    r"不要自己另写一句",
+    r"写清食物名\s*[+＋]\s*分量",
+    r"落到食物名与克数",
+    r"优先(?:补|处理)(?:标为)?[「「\"“']?偏低[」」\"”']?(?:的项目)?",
+    r"不要复述本餐的补充建议",
+    r"不必精确到克",
+    r"本节不得写成",
+    r"每节\s*2-4\s*句",
+    r"全文\s*350\s*字以内",
+    r"数字带单位",
+    r"直接开写",
+    r"不要开场白",
+    r"不要代码块",
+)
+_META_RE = re.compile("|".join(_META_FRAGMENTS))
+# 摘掉指令后常残留成串标点（「…，：」）与孤立括号，收一遍
+_ELLIPSIS_RE = re.compile(r"(?:…|\.{3})+")
+_PUNCT_RUN_RE = re.compile(r"[，,、；;：:]{2,}")
+_BEFORE_STOP_RE = re.compile(r"[，,、；;：:]+\s*(?=[。！？])")
+_LEAD_PUNCT_RE = re.compile(r"^[\s，,、；;：:。！？]+")
+_TAIL_PUNCT_RE = re.compile(r"[\s，,、；;：:]+$")
+
+
+def _strip_prompt_residue(text: str) -> str:
+    """剔除模型抄回来的提示词片段，只留下真正的营养判断。
+
+    逐行处理：一行里只要出现过指令片段，就把该行的加粗标记、残留标点一并收干净；
+    整行清完什么都不剩，说明它本来就是一条要求，直接丢弃。
+    """
+    if not text:
+        return text
+    out: List[str] = []
+    for raw in text.replace("\r", "").split("\n"):
+        if not _META_RE.search(raw):
+            out.append(raw)
+            continue
+        s = raw.replace("**", "")      # 提示词里的加粗会把一条指令切成几段，先去掉
+        s = _META_RE.sub("", s)
+        s = _META_RE.sub("", s)         # 摘掉一段可能让前后拼成新片段，再摘一遍
+        s = _ELLIPSIS_RE.sub("，", s)    # 被截断的句子用逗号接上
+        s = _PUNCT_RUN_RE.sub("，", s)
+        s = _BEFORE_STOP_RE.sub("", s)
+        s = _LEAD_PUNCT_RE.sub("", s)
+        s = _TAIL_PUNCT_RE.sub("", s)
+        if not re.sub(r"[\s，,、；;：:。！？\-*#]", "", s):
+            continue                    # 整行只是一条要求，丢弃
+        out.append(s)
+    return "\n".join(out)
+
 
 def format_advice(text: str) -> str:
     """把模型输出的「一、xxx」小节整理成 Markdown 标题。
@@ -62,6 +135,7 @@ def format_advice(text: str) -> str:
     """
     if not text:
         return text
+    text = _strip_prompt_residue(text)
     # 先把「一、xxx」这类包裹符拆成独立行
     t = re.sub(r"[「【]\s*([一二三四五六七八]、[^」】\n]{2,26}?)\s*[」】][：:]?", r"\n\1\n", text)
 
@@ -1078,10 +1152,15 @@ class MainWindow(QMainWindow):
     def _on_llm_chunk(self, _piece: str) -> None:
         self._llm_buffer.append(_piece)
 
+    def _verdict_checked(self, text: str) -> str:
+        """先按规则层的判定收口，再整理版式。"""
+        checks = ((self._result or {}).get("budget") or {}).get("checks") or []
+        return enforce_verdict(text, checks)
+
     def _flush_llm(self) -> None:
         if not self._llm_buffer:
             return
-        text = format_advice("".join(self._llm_buffer))
+        text = format_advice(self._verdict_checked("".join(self._llm_buffer)))
         self._render_advice(text)
         bar = self.txt_advice.verticalScrollBar()
         bar.setValue(bar.maximum())
@@ -1091,7 +1170,7 @@ class MainWindow(QMainWindow):
         self._flush_llm()
         self._saved_llm = text.strip()
         if self._saved_llm:
-            self._render_advice(format_advice(self._saved_llm))
+            self._render_advice(format_advice(self._verdict_checked(self._saved_llm)))
             self._update_llm_text()
         else:
             self._render_advice("_没有取到建议内容，请检查 Ollama 是否已启动。_")

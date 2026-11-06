@@ -13,6 +13,7 @@ import numpy as np
 import models  # noqa: F401  —— 注册 CBAM，为将来换成中餐 CBAM 模型预留
 
 from ..utils.config_loader import get, resolve_path
+from ..utils.device import is_cpu, resolve_device
 from ..utils.image_utils import quad_center, quad_long_short_sides
 from ..utils.logger import get_logger
 
@@ -42,8 +43,8 @@ class PlateDetector:
         self.conf = float(conf if conf is not None else get("detection.plate_conf_threshold", 0.25))
         self.iou = float(iou if iou is not None else get("detection.iou_threshold", 0.45))
         self.imgsz = int(imgsz if imgsz is not None else get("detection.imgsz", 640))
-        self.device = str(device if device is not None else get("detection.device", "cpu"))
-        self.half = bool(get("detection.half", False))
+        self.device = resolve_device(device if device is not None else get("detection.device", "cpu"))
+        self.half = bool(get("detection.half", False)) and not is_cpu(self.device)
         self.max_det = int(get("detection.max_det", 30))
 
         log.info(

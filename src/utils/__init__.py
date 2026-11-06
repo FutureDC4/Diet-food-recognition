@@ -1,6 +1,7 @@
 """通用工具导出。"""
 
 from .config_loader import PROJECT_ROOT, get, get_config, resolve_path
+from .device import is_cpu, resolve_device
 from .image_utils import (
     draw_detections,
     extract_rotated_region,
@@ -24,4 +25,6 @@ __all__ = [
     "extract_rotated_region",
     "get_logger",
     "setup_logger",
+    "resolve_device",
+    "is_cpu",
 ]
