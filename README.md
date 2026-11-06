@@ -91,6 +91,14 @@
 </tr>
 </table>
 
+### 上位机：历史记录
+
+每次分析自动入库，按天汇总热量/蛋白/纤维，可切用户、可导出。
+
+<p align="center">
+  <img src="docs/screenshots/03_gui_history.png" width="820" alt="历史记录页" />
+</p>
+
 更多原图与结果见 **[test_samples/](test_samples/)**。
 
 ---
