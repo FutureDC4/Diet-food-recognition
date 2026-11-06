@@ -23,14 +23,18 @@ data/history.db.*
 data/history.csv
 *.log
 
-# ===== 模型权重（体积大，不放仓库）=====
+# ===== 模型权重 =====
+# 默认全排除，仅放行部署必需的 3 个（共约 79MB，单文件均 < 100MB）
 *.pt
 *.pth
 *.onnx
 *.engine
-models/weights/
+!models/weights/chinese_food.pt
+!models/weights/chinese_food_cbam_neck.pt
+!models/weights/yolo11m-obb-plate.pt
 
-# ===== 训练结果（162MB，不放仓库；关键图表见 docs/training_results/）=====
+# ===== 训练结果 =====
+# runs/ 是权重 + 批次预览图（162MB），只保留 docs/training_results/ 下的曲线与指标
 runs/
 
 # ===== 原始项目副本（只读参考）=====
